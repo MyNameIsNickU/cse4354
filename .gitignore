@@ -1,0 +1,9 @@
+# Code Composer Project Folders
+shell/RemoteSystemsTempFiles/
+shell/dvt/
+shell/.jxbrowser.userdata/
+shell/.metadata/
+shell/src/**
+
+!shell/src/*.c
+!shell/src/*.h
