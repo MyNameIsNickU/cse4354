@@ -37,25 +37,7 @@ int main()
     }
     putsUart0("Initial setup complete!\n");
 
-    // CLI Variables
-    USER_DATA data;
     //char buffer[MAX_CHARS + 1];
 
-    while(1)
-    {
-        putcUart0('>');
-        getsUart0(&data);
-        parseFields(&data);
-
-        if( handleCommand(&data) )
-        {
-
-        }
-        else
-        {
-            putsUart0("Invalid input.\n");
-        }
-
-        putcUart0('\n');
-    }
+    shell();
 }

@@ -32,6 +32,8 @@ uint8_t subcommand;
 uint16_t argument;
 } instruction;
 
+void int_tostr(uint32_t input, char * result);
+
 void getsUart0(USER_DATA* data);
 void parseFields(USER_DATA* data);
 
@@ -41,6 +43,8 @@ float getFieldFloat(USER_DATA *data, uint8_t fieldNumber);
 
 bool strcomp(char * a, char * b);
 bool isCommand(USER_DATA* data, char strCommand[], uint8_t minArguments);
+
+void shell(USER_DATA *data);
 
 void comm2str(instruction instruct, int index);
 

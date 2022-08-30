@@ -9,6 +9,31 @@
 #include "cmd.h"
 #include "uart0.h"
 #include "tm4c123gh6pm.h"
+#include "rtos.h"
+
+void int_tostr(uint32_t input, char * result)
+{
+    uint32_t input_temp = input;
+    uint8_t places = 0;
+
+    char int_map[11] = "0123456789";
+
+    while(input_temp > 0)
+    {
+        input_temp /= 10;
+        places++;
+    }
+
+    input_temp = input;
+
+    result[places--] = '\0';
+
+    do
+    {
+        result[places--] = int_map[input_temp % 10];
+        input_temp /= 10;
+    } while(input_temp > 0);
+}
 
 void getsUart0(USER_DATA* data)
 {
@@ -136,17 +161,33 @@ int32_t getFieldInteger(USER_DATA* data, uint8_t fieldNumber)
         return -1;
 }
 
+// can't use sscanf for RTOS so not currently working
 float getFieldFloat(USER_DATA *data, uint8_t fieldNumber)
 {
     char *strValue;
     float returnVal = 0;
+	double digit_position = 10;
+	uint8_t i = 0;
 
 
     if(fieldNumber <= data->fieldCount && (data->fieldType[fieldNumber] == 'f' || data->fieldType[fieldNumber] == 'n') )
     {
         strValue = &data->buffer[ data->fieldPosition[fieldNumber] ];
+		
 
-        sscanf(strValue, "%f", &returnVal);
+        //sscanf(strValue, "%f", &returnVal);
+		for(; strValue[i] != '\0'; i++)
+        {
+            returnVal = returnVal * 10 + (strValue[i] - '0');
+        }
+		//TODO check if i is the correct offset here
+		i++;
+		while(strValue[i++] != '\0')
+		{
+			returnVal += (strValue[i] - '0') / digit_position;
+			digit_position *= 10;
+		}
+		
     }
     return returnVal;
 }
@@ -208,6 +249,7 @@ void data_flush(USER_DATA * clear)
 bool handleCommand(USER_DATA* data)
 {
     uint8_t i;
+    uint32_t pid;
 
     /*  ======================= *
      *  ||||||| H E L P ||||||| *
@@ -240,5 +282,76 @@ bool handleCommand(USER_DATA* data)
         return true;
     }
 
+    /*  ======================= *
+     *  ||||||||| P S ||||||||| *
+     *  ======================= */
+    else if( isCommand(data, "ps", 0) )
+    {
+        ps();
+        return true;
+    }
+
+    /*  ======================= *
+     *  ||||||| I P C S ||||||| *
+     *  ======================= */
+    else if( isCommand(data, "ipcs", 0) )
+    {
+        ipcs();
+        return true;
+    }
+
+    /*  ======================= *
+     *  ||||||| K I L L ||||||| *
+     *  ======================= */
+    else if( isCommand(data, "kill", 1) )
+    {
+        pid = getFieldInteger(data, 1);
+        kill(pid);
+        return true;
+    }
+
+    /*  ======================= *
+     *  ||||||| P M A P ||||||| *
+     *  ======================= */
+    else if( isCommand(data, "pmap", 1) )
+    {
+        pid = getFieldInteger(data, 1);
+        pmap(pid);
+        return true;
+    }
+
+    /*  ======================= *
+     *  |||| P R E E M P T |||| *
+     *  ======================= */
+    else if( isCommand(data, "preempt", 1) )
+    {
+        //pid = getFieldInteger(data, 1);
+        //preempt();
+        return true;
+    }
+
     return false;
+}
+
+void shell()
+{
+	USER_DATA data;
+		
+	while(1)
+	{
+		putcUart0('>');
+		getsUart0(&data);
+		parseFields(&data);
+
+		if( handleCommand(&data) )
+		{
+
+		}
+		else
+		{
+			putsUart0("Invalid input.\n");
+		}
+
+		putcUart0('\n');
+	}
 }
