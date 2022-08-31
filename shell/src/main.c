@@ -18,7 +18,6 @@ void initHw()
     setUart0BaudRate(115200, 40e6);
 }
 
-
 int main()
 {
     initHw();
