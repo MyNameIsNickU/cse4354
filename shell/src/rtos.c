@@ -40,10 +40,10 @@ void preempt(bool on)
     switch(on)
     {
     case true:
-        putsUart0("preeempt ON");
+        putsUart0("preempt ON");
         break;
     case false:
-        putsUart0("preeempt OFF");
+        putsUart0("preempt OFF");
         break;
     default:
         break;
