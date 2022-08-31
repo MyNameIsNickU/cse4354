@@ -5,10 +5,6 @@
 #include "uart0.h"
 #include "wait.h"
 
-#define RED_LED PORTF,1
-#define BLUE_LED PORTF,2
-#define GREEN_LED PORTF,3
-
 void initHw()
 {
     initSystemClockTo40Mhz();

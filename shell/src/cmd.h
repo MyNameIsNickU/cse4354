@@ -42,7 +42,7 @@ int32_t getFieldInteger(USER_DATA* data, uint8_t fieldNumber);
 float getFieldFloat(USER_DATA *data, uint8_t fieldNumber);
 bool getFieldBool(USER_DATA *data, uint8_t fieldNumber);
 
-bool strcomp(char * a, char * b);
+bool strcomp(const char * a, const char * b);
 bool isCommand(USER_DATA* data, char strCommand[], uint8_t minArguments);
 
 void shell();

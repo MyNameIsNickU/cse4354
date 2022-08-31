@@ -192,7 +192,7 @@ float getFieldFloat(USER_DATA *data, uint8_t fieldNumber)
     return returnVal;
 }
 
-bool strcomp(char * a, char * b)
+bool strcomp(const char * a, const char * b)
 {
     int8_t i = 0;
     char c1 = a[i];
@@ -256,7 +256,7 @@ bool handleCommand(USER_DATA* data)
     if( isCommand(data, "help", 0) ) // always pass data, "what string do you want to check", how many args
     {
         //putsUart0("No commands implemented yet...\r");
-        putsUart0("Possible commands:\n");
+        putsUart0("\nPossible commands:\n");
         putsUart0("'reboot'\r");
         putsUart0("'clear'\r");
         putsUart0("'ps'\r");
@@ -264,6 +264,9 @@ bool handleCommand(USER_DATA* data)
         putsUart0("'kill [PID#]'\r");
         putsUart0("'pmap [PID#]'\r");
         putsUart0("'preempt [ON|OFF]'\r");
+        putsUart0("'sched [PRIO|RR]'\r");
+        putsUart0("'pidof [proc_name]'\r");
+        putsUart0("'run [proc_name]'\r");
         return true;
     }
 
@@ -339,6 +342,41 @@ bool handleCommand(USER_DATA* data)
             preempt(false);
             return true;
         }
+    }
+
+    /*  ======================= *
+     *  |||||| S C H E D |||||| *
+     *  ======================= */
+    else if( isCommand(data, "sched", 1) )
+    {
+        if( strcomp(getFieldString(data, 1), "prio") )
+        {
+            sched(true);
+            return true;
+        }
+        else if( strcomp(getFieldString(data, 1), "rr") )
+        {
+            sched(false);
+            return true;
+        }
+    }
+
+    /*  ======================= *
+     *  |||||| P I D  O F ||||| *
+     *  ======================= */
+    else if( isCommand(data, "pidof", 1) )
+    {
+        pidof(getFieldString(data, 1));
+        return true;
+    }
+
+    /*  ======================= *
+     *  |||||||| R U N |||||||| *
+     *  ======================= */
+    else if( isCommand(data, "run", 1) )
+    {
+        runProg(getFieldString(data, 1));
+        return true;
     }
 
     return false;

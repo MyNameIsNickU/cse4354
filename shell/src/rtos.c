@@ -8,6 +8,7 @@
 #include "rtos.h"
 #include "uart0.h"
 #include "cmd.h"
+#include "gpio.h"
 
 void ps(void)
 {
@@ -48,4 +49,34 @@ void preempt(bool on)
     default:
         break;
     }
+}
+
+void sched(bool prio_on)
+{
+    switch(prio_on)
+    {
+    case true:
+        putsUart0("sched prio");
+        break;
+    case false:
+        putsUart0("sched rr");
+        break;
+    default:
+        break;
+    }
+}
+
+void pidof(const char name[])
+{
+    putsUart0(name);
+    putsUart0(" launched");
+}
+
+void runProg(const char name[])
+{
+    putsUart0("Running: ");
+    putsUart0(name);
+
+    if( strcomp(name, "red") )
+        setPinValue(RED_LED,!getPinValue(RED_LED));
 }
