@@ -200,15 +200,14 @@ bool strcomp(char * a, char * b)
 
     do
     {
-        if(c1 != c2)
-            return false;
-        else
+        if( c1 != c2 && !(c1 - c2 == 32 || c1 - c2 == -32) )
         {
-            i++;
-            c1 = a[i];
-            c2 = b[i];
+            return false;
         }
-    } while(c1 != NULL || c2 != NULL);
+        i++;
+        c1 = a[i];
+        c2 = b[i];
+    } while(c1 != '\0' || c2 != '\0');
     return true;
 }
 
@@ -260,6 +259,11 @@ bool handleCommand(USER_DATA* data)
         putsUart0("Possible commands:\n");
         putsUart0("'reboot'\r");
         putsUart0("'clear'\r");
+        putsUart0("'ps'\r");
+        putsUart0("'ipcs'\r");
+        putsUart0("'kill [PID#]'\r");
+        putsUart0("'pmap [PID#]'\r");
+        putsUart0("'preempt [ON|OFF]'\r");
         return true;
     }
 
@@ -325,9 +329,16 @@ bool handleCommand(USER_DATA* data)
      *  ======================= */
     else if( isCommand(data, "preempt", 1) )
     {
-        //pid = getFieldInteger(data, 1);
-        //preempt();
-        return true;
+        if( strcomp(getFieldString(data, 1), "ON") )
+        {
+            preempt(true);
+            return true;
+        }
+        else if( strcomp(getFieldString(data, 1), "OFF") )
+        {
+            preempt(false);
+            return true;
+        }
     }
 
     return false;
@@ -343,10 +354,18 @@ void shell()
 		getsUart0(&data);
 		parseFields(&data);
 
-		if( handleCommand(&data) )
-		{
+		// DEBUG
+		/*uint8_t i;
+        putcUart0('\n');
+        for (i = 0; i < data.fieldCount; i++)
+        {
+            putcUart0(data.fieldType[i]);
+            putcUart0('\t');
+            putsUart0(&data.buffer[ data.fieldPosition[i] ]);
+            putcUart0('\n');
+        }*/
 
-		}
+		if( handleCommand(&data) ) { }
 		else
 		{
 			putsUart0("Invalid input.\n");

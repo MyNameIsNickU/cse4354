@@ -40,11 +40,12 @@ void parseFields(USER_DATA* data);
 char* getFieldString(USER_DATA* data, uint8_t fieldNumber);
 int32_t getFieldInteger(USER_DATA* data, uint8_t fieldNumber);
 float getFieldFloat(USER_DATA *data, uint8_t fieldNumber);
+bool getFieldBool(USER_DATA *data, uint8_t fieldNumber);
 
 bool strcomp(char * a, char * b);
 bool isCommand(USER_DATA* data, char strCommand[], uint8_t minArguments);
 
-void shell(USER_DATA *data);
+void shell();
 
 void comm2str(instruction instruct, int index);
 
