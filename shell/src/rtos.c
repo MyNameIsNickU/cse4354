@@ -44,10 +44,10 @@ void preempt(bool on)
     switch(on)
     {
     case true:
-        putsUart0("preempt on");
+        putsUart0("preempt ON");
         break;
     case false:
-        putsUart0("preempt off");
+        putsUart0("preempt OFF");
         break;
     default:
         break;
@@ -75,7 +75,7 @@ void pidof(const char name[])
     putsUart0(" launched");
 }
 
-void runProcess(const char name[])
+void runProg(const char name[])
 {
     putsUart0("Running: ");
     putsUart0(name);

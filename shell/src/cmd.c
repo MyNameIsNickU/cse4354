@@ -375,7 +375,7 @@ bool handleCommand(USER_DATA* data)
      *  ======================= */
     else if( isCommand(data, "run", 1) )
     {
-        runProcess(getFieldString(data, 1));
+        runProg(getFieldString(data, 1));
         return true;
     }
 
