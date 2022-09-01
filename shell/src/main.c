@@ -4,6 +4,7 @@
 #include "cmd.h"
 #include "uart0.h"
 #include "wait.h"
+#include "utilities.h"
 
 void initHw()
 {

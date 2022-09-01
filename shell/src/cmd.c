@@ -379,6 +379,11 @@ bool handleCommand(USER_DATA* data)
         return true;
     }
 
+    else if( data->buffer[0] == '\0' )
+    {
+        return true;
+    }
+
     return false;
 }
 
