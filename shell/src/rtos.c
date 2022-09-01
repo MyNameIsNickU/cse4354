@@ -9,7 +9,6 @@
 #include "uart0.h"
 #include "cmd.h"
 #include "gpio.h"
-#include "utilities.h"
 
 void ps(void)
 {
@@ -23,20 +22,18 @@ void ipcs(void)
 
 void kill(uint32_t pid)
 {
-    //char pid_str[20];
-    //int_tostr(pid, pid_str);
-    //putsUart0(pid_str);
-    //putsUart0(" Killed");
-    emb_printf("%u Killed", pid);
+    char pid_str[20];
+    int_tostr(pid, pid_str);
+    putsUart0(pid_str);
+    putsUart0(" Killed");
 }
 
 void pmap(uint32_t pid)
 {
-    /*char pid_str[20];
+    char pid_str[20];
     int_tostr(pid, pid_str);
     putsUart0("Memory usage by ");
-    putsUart0(pid_str);*/
-    emb_printf("Memory usage by %u", pid);
+    putsUart0(pid_str);
 }
 
 void preempt(bool on)
