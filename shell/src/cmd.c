@@ -200,6 +200,7 @@ bool strcomp(const char * a, const char * b)
 
     do
     {
+        // case insensitive check
         if( c1 != c2 && !(c1 - c2 == 32 || c1 - c2 == -32) )
         {
             return false;
@@ -211,7 +212,7 @@ bool strcomp(const char * a, const char * b)
     return true;
 }
 
-bool isCommand(USER_DATA* data, char strCommand[], uint8_t minArguments)
+bool isCommand(USER_DATA* data, const char strCommand[], uint8_t minArguments)
 {
     char* strCompare = &data->buffer[ data->fieldPosition[0] ];
 	
@@ -231,6 +232,8 @@ bool isCommand(USER_DATA* data, char strCommand[], uint8_t minArguments)
 		return false;
 }
 
+// i dont think i need this anymore
+// don't know why I had to make something like this...
 void data_flush(USER_DATA * clear)
 {
     int8_t i;
@@ -376,6 +379,11 @@ bool handleCommand(USER_DATA* data)
     else if( isCommand(data, "run", 1) )
     {
         runProg(getFieldString(data, 1));
+        return true;
+    }
+
+    else if( data->buffer[0] == '\0' )
+    {
         return true;
     }
 

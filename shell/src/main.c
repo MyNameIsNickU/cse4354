@@ -4,6 +4,7 @@
 #include "cmd.h"
 #include "uart0.h"
 #include "wait.h"
+#include "utilities.h"
 
 void initHw()
 {
@@ -32,6 +33,10 @@ int main()
         waitMicrosecond(100000);
     }
     putsUart0("Initial setup complete!\n");
+
+
+    //emb_printf("here is a long string: %s\there is an unsigned int: %u\there is a char: %c\n", "AYOOOOOOOOOOo", 135807128, '&');
+    //emb_printf("\nhere is a hex value: %x\there is another: %x\n", 0xFFFF, 0x1234ABCD);
 
     //char buffer[MAX_CHARS + 1];
 

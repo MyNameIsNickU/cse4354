@@ -83,6 +83,15 @@ void putsUart0(const char* str)
         putcUart0(str[i++]);
 }
 
+// Blocking function that writes a string when the UART buffer is not full
+// takes in length parameter
+void putsUart0L(const char* str, const uint32_t length)
+{
+    uint32_t i = 0;
+    for(; i < length; i++)
+        putcUart0(str[i]);
+}
+
 // Blocking function that returns with serial data once the buffer is not empty
 char getcUart0(void)
 {
