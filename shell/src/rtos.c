@@ -71,15 +71,18 @@ void sched(bool prio_on)
 
 void pidof(const char name[])
 {
-    putsUart0(name);
-    putsUart0(" launched");
+    /*putsUart0(name);
+    putsUart0(" launched");*/
+    emb_printf("%s launched", name);
 }
 
 void runProcess(const char name[])
 {
-    putsUart0("Running: ");
-    putsUart0(name);
+    /*putsUart0("Running: ");
+    putsUart0(name);*/
+    emb_printf("Running: %s", name);
 
+    // when the user types 'run red', toggle the RED_LED
     if( strcomp(name, "red") )
         setPinValue(RED_LED,!getPinValue(RED_LED));
 }

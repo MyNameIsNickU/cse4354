@@ -43,7 +43,7 @@ float getFieldFloat(USER_DATA *data, uint8_t fieldNumber);
 bool getFieldBool(USER_DATA *data, uint8_t fieldNumber);
 
 bool strcomp(const char * a, const char * b);
-bool isCommand(USER_DATA* data, char strCommand[], uint8_t minArguments);
+bool isCommand(USER_DATA* data, const char strCommand[], uint8_t minArguments);
 
 void shell();
 
