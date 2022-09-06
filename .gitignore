@@ -1,9 +1,22 @@
-# Code Composer Project Folders
+# SHELL
+## Code Composer Project Folders
 shell/RemoteSystemsTempFiles/
 shell/dvt/
 shell/.jxbrowser.userdata/
 shell/.metadata/
 shell/src/**
 
+## Allow normal C files
 !shell/src/*.c
 !shell/src/*.h
+
+# MPU
+## Code Composer Project Folders
+mpu/RemoteSystemsTempFiles/
+mpu/dvt/
+mpu/.jxbrowser.userdata/
+mpu/.metadata/
+
+## Allow normal C files
+!mpu/src/*.c
+!mpu/src/*.h
