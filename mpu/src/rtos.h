@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+void reboot(void);
 void ps(void);
 void ipcs(void);
 void kill(uint32_t pid);

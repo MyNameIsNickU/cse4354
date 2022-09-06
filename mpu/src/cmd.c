@@ -278,7 +278,7 @@ bool handleCommand(USER_DATA* data)
      *  ======================= */
     else if( isCommand(data, "reboot", 0) )
     {
-        NVIC_APINT_R = NVIC_APINT_VECTKEY | NVIC_APINT_SYSRESETREQ;
+        reboot();
         return true; // won't really do anything
     }
 

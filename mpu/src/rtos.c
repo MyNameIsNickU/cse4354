@@ -5,11 +5,21 @@
  *      Author: insti
  */
 
+#include "tm4c123gh6pm.h"
 #include "rtos.h"
 #include "uart0.h"
 #include "cmd.h"
 #include "gpio.h"
 #include "utilities.h"
+
+void reboot(void)
+{
+    // resets core and microcontroller
+    NVIC_APINT_R = NVIC_APINT_VECTKEY | NVIC_APINT_SYSRESETREQ; // resets perphs and regs
+
+    // just a core reset, does not reset perphs and regs
+    //NVIC_APINT_R = NVIC_APINT_VECTKEY | NVIC_APINT_VECT_RESET;
+}
 
 void ps(void)
 {

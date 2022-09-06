@@ -48,7 +48,6 @@ void emb_vprintf(const char * str, va_list vaArgP)
             switch(*str++)
             {
                 // strings
-                //TODO Test?
                 case 's':
                 {
                     // gets the char *
