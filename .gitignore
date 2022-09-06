@@ -16,6 +16,7 @@ mpu/RemoteSystemsTempFiles/
 mpu/dvt/
 mpu/.jxbrowser.userdata/
 mpu/.metadata/
+mpu/src/**
 
 ## Allow normal C files
 !mpu/src/*.c
