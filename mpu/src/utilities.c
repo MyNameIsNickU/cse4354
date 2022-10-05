@@ -97,6 +97,21 @@ void emb_vprintf(const char * str, va_list vaArgP)
                     convertNeeded = 1;
                     break;
                 }
+                // binary?
+                case 'b':
+                {
+                    // pull the variable unsigned int value
+                    ui32Value = va_arg(vaArgP, uint32_t);
+                    // reset the writing buffer index to 0
+                    bufferPos = 0;
+                    // indicates base 16
+                    base = 2;
+                    // it is unsigned and cannot be negative
+                    //negNeeded = 0;
+                    // indicates that a conversion from int to string (in hex) is needed
+                    convertNeeded = 1;
+                    break;
+                }
             }
 
             // handles flag for a conversion from an integer value to a string
@@ -137,4 +152,22 @@ void emb_printf(const char * str, ...)
 
     // stop handling variable arguments
     va_end(vaArgP);
+}
+
+uint32_t emb_log2(uint32_t value)
+{
+    if(value == 1)
+        return 0;
+    return 1 + emb_log2(value/2);
+}
+
+uint32_t emb_pow2(int8_t value)
+{
+    int8_t loops = value;
+    uint32_t return_value = 1;
+
+    while(loops-- > 0)
+        return_value *= 2;
+
+    return return_value;
 }

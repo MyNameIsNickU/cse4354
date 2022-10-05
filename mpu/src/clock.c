@@ -1,3 +1,21 @@
+// Clock Library
+// Jason Losh
+
+//-----------------------------------------------------------------------------
+// Hardware Target
+//-----------------------------------------------------------------------------
+
+// Target Platform: EK-TM4C123GXL
+// Target uC:       TM4C123GH6PM
+// System Clock:    -
+
+// Hardware configuration:
+// 16 MHz external crystal oscillator
+
+//-----------------------------------------------------------------------------
+// Device includes, defines, and assembler directives
+//-----------------------------------------------------------------------------
+
 #include <stdint.h>
 #include "clock.h"
 #include "tm4c123gh6pm.h"
@@ -11,15 +29,17 @@
 //-----------------------------------------------------------------------------
 
 // Initialize system clock to 40 MHz using PLL and 16 MHz crystal oscillator
-void initSystemClockTo8Mhz(void)
-{
-    // Configure HW to work with 16 MHz XTAL, PLL enabled, sysdivider of 5, creating system clock of 40 MHz
-    //SYSCTL_RCC_R = SYSCTL_RCC_XTAL_16MHZ | SYSCTL_RCC_OSCSRC_MAIN | SYSCTL_RCC_USESYSDIV | (4 << SYSCTL_RCC_SYSDIV_S);
-	SYSCTL_RCC_R = SYSCTL_RCC_XTAL_16MHZ | SYSCTL_RCC_OSCSRC_MAIN | SYSCTL_RCC_USESYSDIV | SYSCTL_RCC_USEPWMDIV;
-	SYSCTL_RCC2_R = SYSCTL_RCC2_USERCC2 | (25 << SYSCTL_RCC2_SYSDIV2_S);
-}
-
 void initSystemClockTo40Mhz(void)
 {
+    // Configure HW to work with 16 MHz XTAL, PLL enabled, sysdivider of 5, creating system clock of 40 MHz
     SYSCTL_RCC_R = SYSCTL_RCC_XTAL_16MHZ | SYSCTL_RCC_OSCSRC_MAIN | SYSCTL_RCC_USESYSDIV | (4 << SYSCTL_RCC_SYSDIV_S);
+}
+
+void initSystemClockTo80Mhz(void)
+{
+    // pg. 224 for table
+    // pg. # for register
+    SYSCTL_RCC_R = SYSCTL_RCC_XTAL_16MHZ | SYSCTL_RCC_OSCSRC_MAIN | SYSCTL_RCC_USESYSDIV;
+    SYSCTL_RCC2_R = SYSCTL_RCC2_USERCC2 | SYSCTL_RCC2_DIV400 & (~SYSCTL_RCC2_SYSDIV2LSB) | (2 << SYSCTL_RCC2_SYSDIV2_S);
+    //SysCtlClockSet(SYSCTL_SYSDIV_10 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
 }

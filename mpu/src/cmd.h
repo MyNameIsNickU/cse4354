@@ -32,13 +32,11 @@ uint8_t subcommand;
 uint16_t argument;
 } instruction;
 
-void int_tostr(uint32_t input, char * result);
-
 void getsUart0(USER_DATA* data);
 void parseFields(USER_DATA* data);
 
 char* getFieldString(USER_DATA* data, uint8_t fieldNumber);
-int32_t getFieldInteger(USER_DATA* data, uint8_t fieldNumber);
+int32_t getFieldInteger(USER_DATA* data, uint8_t fieldNumber, int8_t *valid);
 float getFieldFloat(USER_DATA *data, uint8_t fieldNumber);
 bool getFieldBool(USER_DATA *data, uint8_t fieldNumber);
 

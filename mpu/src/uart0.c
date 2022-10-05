@@ -42,7 +42,7 @@ void initUart0(void)
     // Enable clocks
     SYSCTL_RCGCUART_R |= SYSCTL_RCGCUART_R0;
     _delay_cycles(3);
-    enablePort(PORTA);
+    //enablePort(PORTA);
 
     // Configure UART0 pins
     selectPinPushPullOutput(UART_TX);

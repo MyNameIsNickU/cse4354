@@ -10,30 +10,8 @@
 #include "uart0.h"
 #include "tm4c123gh6pm.h"
 #include "rtos.h"
-
-void int_tostr(uint32_t input, char * result)
-{
-    uint32_t input_temp = input;
-    uint8_t places = 0;
-
-    char int_map[11] = "0123456789";
-
-    while(input_temp > 0)
-    {
-        input_temp /= 10;
-        places++;
-    }
-
-    input_temp = input;
-
-    result[places--] = '\0';
-
-    do
-    {
-        result[places--] = int_map[input_temp % 10];
-        input_temp /= 10;
-    } while(input_temp > 0);
-}
+#include "utilities.h"
+#include "board.h"
 
 void getsUart0(USER_DATA* data)
 {
@@ -104,6 +82,7 @@ void parseFields(USER_DATA* data)
             }
 
             // if c is float
+            // TODO: handle signed integers, don't assume it's a float
             if( c == '.' || c == '-' )
             {
                 data->fieldType[data->fieldCount] = 'f';
@@ -120,8 +99,12 @@ void parseFields(USER_DATA* data)
                 isPrevDelim = true;
                 data->buffer[i] = '\0';
             }
+            // changes data type to float if the current field is numeric and we receive period
             else if( data->fieldType[data->fieldCount-1] == 'n' && c == '.' )
                 data->fieldType[data->fieldCount-1] = 'f';
+            // if previous field numeric and we get alpha characters, change field type to alpha
+            else if( data->fieldType[data->fieldCount-1] == 'n' && ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) )
+                data->fieldType[data->fieldCount-1] = 'a';
         }
 
     }
@@ -133,13 +116,14 @@ void parseFields(USER_DATA* data)
 // 0 1 2 3...
 char* getFieldString(USER_DATA* data, uint8_t fieldNumber)
 {
-    if(fieldNumber <= data->fieldCount)
+    // checks if field number is in our USER_DATA, and that the field is alpha
+    if(fieldNumber <= data->fieldCount && (data->fieldType[fieldNumber] == 'a' || data->fieldType[fieldNumber] == 'A'))
         return &data->buffer[ data->fieldPosition[fieldNumber] ];
     else
-        return '\0';
+        return NULL;
 }
 
-int32_t getFieldInteger(USER_DATA* data, uint8_t fieldNumber)
+int32_t getFieldInteger(USER_DATA* data, uint8_t fieldNumber, int8_t *valid)
 {
     char* strValue;
     int32_t returnVal = 0;
@@ -154,11 +138,15 @@ int32_t getFieldInteger(USER_DATA* data, uint8_t fieldNumber)
             returnVal = returnVal * 10 + (strValue[i] - '0');
         }
 
+        *valid = 1;
         return returnVal;
     }
 
     else
-        return -1;
+    {
+        *valid = 0;
+        return 0;
+    }
 }
 
 // can't use sscanf for RTOS so not currently working
@@ -222,9 +210,7 @@ bool isCommand(USER_DATA* data, const char strCommand[], uint8_t minArguments)
 			return true;
 		else
 		{
-			/* putsUart0("ERROR: Not enough arguments for '");
-			putsUart0(strCompare);
-			putsUart0("'.\n"); */
+			putsUart0("(not enough arguments) ");
 			return false;
 		}
 	}
@@ -252,6 +238,7 @@ bool handleCommand(USER_DATA* data)
 {
     uint8_t i;
     uint32_t pid;
+    int8_t valid = 0;
 
     /*  ======================= *
      *  ||||||| H E L P ||||||| *
@@ -270,6 +257,7 @@ bool handleCommand(USER_DATA* data)
         putsUart0("'sched [PRIO|RR]'\r");
         putsUart0("'pidof [proc_name]'\r");
         putsUart0("'run [proc_name]'\r");
+        putsUart0("'test [LED|Button]'\r\n");
         return true;
     }
 
@@ -285,7 +273,7 @@ bool handleCommand(USER_DATA* data)
     /*  ======================= *
      *  |||||| C L E A R |||||| *
      *  ======================= */
-    else if( isCommand(data, "clear", 0) )
+    else if( isCommand(data, "clear", 0) || isCommand(data, "cls", 0))
     {
         for(i = 0; i < 50; i++)
         putcUart0('\n');
@@ -315,9 +303,17 @@ bool handleCommand(USER_DATA* data)
      *  ======================= */
     else if( isCommand(data, "kill", 1) )
     {
-        pid = getFieldInteger(data, 1);
-        kill(pid);
-        return true;
+        pid = getFieldInteger(data, 1, &valid);
+        if(valid)
+        {
+            kill(pid);
+            return true;
+        }
+        else
+        {
+            emb_printf("Invalid input for 'kill'\n");
+            return true;
+        }
     }
 
     /*  ======================= *
@@ -325,9 +321,17 @@ bool handleCommand(USER_DATA* data)
      *  ======================= */
     else if( isCommand(data, "pmap", 1) )
     {
-        pid = getFieldInteger(data, 1);
-        pmap(pid);
-        return true;
+        pid = getFieldInteger(data, 1, &valid);
+        if(valid)
+        {
+            pmap(pid);
+            return true;
+        }
+        else
+        {
+            emb_printf("Invalid input for 'pmap'\n");
+            return true;
+        }
     }
 
     /*  ======================= *
@@ -382,7 +386,22 @@ bool handleCommand(USER_DATA* data)
         return true;
     }
 
-    else if( data->buffer[0] == '\0' )
+
+    /*  ======================= *
+     *  ||||||| T E S T ||||||| *
+     *  ======================= */
+    else if( isCommand(data, "test", 1) )
+    {
+        if( strcomp(getFieldString(data, 1), "led") )
+            testLEDs();
+        if( strcomp(getFieldString(data, 1), "button") )
+            testButtons();
+        //if( strcomp(getFieldString(data, 1), "fault") )
+
+        return true;
+    }
+
+    else if( data->buffer[0] == '\0' || data->buffer[0] == '\n' )
     {
         return true;
     }
@@ -401,7 +420,8 @@ void shell()
 		parseFields(&data);
 
 		// DEBUG
-		/*uint8_t i;
+#ifdef DEBUG
+		uint8_t i;
         putcUart0('\n');
         for (i = 0; i < data.fieldCount; i++)
         {
@@ -409,14 +429,15 @@ void shell()
             putcUart0('\t');
             putsUart0(&data.buffer[ data.fieldPosition[i] ]);
             putcUart0('\n');
-        }*/
+        }
+#endif
 
 		if( handleCommand(&data) ) { }
 		else
 		{
-			putsUart0("Invalid input.\n");
+			emb_printf("Invalid input: '%s'\n", &data.buffer[0]);
 		}
 
-		putcUart0('\n');
+		//putcUart0('\n');
 	}
 }

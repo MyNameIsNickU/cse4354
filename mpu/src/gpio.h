@@ -37,6 +37,28 @@ typedef enum _PORT
 #define BLUE_LED PORTF,2
 #define GREEN_LED PORTF,3
 
+#define ORANGE_PIN PORTA,2
+#define ORANGE (*((volatile uint32_t *)(0x42000000 + (0x400043FC-0x40000000)*32 + 2*4))) // PA2
+#define RED_PIN PORTE,0
+#define RED    (*((volatile uint32_t *)(0x42000000 + (0x400243FC-0x40000000)*32 + 0*4))) // PE0
+#define GREEN_PIN PORTA,4
+#define GREEN  (*((volatile uint32_t *)(0x42000000 + (0x400043FC-0x40000000)*32 + 4*4))) // PA4
+#define YELLOW_PIN PORTA,3
+#define YELLOW (*((volatile uint32_t *)(0x42000000 + (0x400043FC-0x40000000)*32 + 3*4))) // PA3
+
+#define PB0_PIN PORTD,6
+#define PB0_BB (*((volatile uint32_t *)(0x42000000 + (0x400073FC-0x40000000)*32 + 6*4))) // PD6
+#define PB1_PIN PORTD,7
+#define PB1_BB (*((volatile uint32_t *)(0x42000000 + (0x400073FC-0x40000000)*32 + 7*4))) // PD7
+#define PB2_PIN PORTC,4
+#define PB2_BB (*((volatile uint32_t *)(0x42000000 + (0x400063FC-0x40000000)*32 + 4*4))) // PC4
+#define PB3_PIN PORTC,5
+#define PB3_BB (*((volatile uint32_t *)(0x42000000 + (0x400063FC-0x40000000)*32 + 5*4))) // PC5
+#define PB4_PIN PORTC,6
+#define PB4_BB (*((volatile uint32_t *)(0x42000000 + (0x400063FC-0x40000000)*32 + 6*4))) // PC6
+#define PB5_PIN PORTC,7
+#define PB5_BB (*((volatile uint32_t *)(0x42000000 + (0x400063FC-0x40000000)*32 + 7*4))) // PC7
+
 //-----------------------------------------------------------------------------
 // Subroutines
 //-----------------------------------------------------------------------------
