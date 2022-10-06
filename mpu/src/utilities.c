@@ -154,11 +154,15 @@ void emb_printf(const char * str, ...)
     va_end(vaArgP);
 }
 
-uint32_t emb_log2(uint32_t value)
+uint8_t emb_log2(uint64_t value)
 {
-    if(value == 1)
-        return 0;
-    return 1 + emb_log2(value/2);
+    uint8_t count = 0;
+    while(value > 1)
+    {
+        value >> 1;
+        count++;
+    }
+    return count;
 }
 
 uint32_t emb_pow2(int8_t value)

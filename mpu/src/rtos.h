@@ -16,11 +16,12 @@ void * malloc_from_heap(uint32_t size_in_bytes);
 
 void initRTOS(void);
 
+void setupBackgroundRegion(void);
 void allowFlashAccess(void);
 void allowPeripheralAccess(void);
 void setupSramAccess(void);
 
-void setSramAccessWindow(uint32_t base_addr, uint32_t size_in_bytes);
+void setSramAccessWindow(uint32_t base_addr, uint32_t size_to_allocate);
 
 //void setMPUFields(uint8_t region, uint32_t base_addr, uint32_t region_size);
 void enableMPU(void);

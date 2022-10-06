@@ -61,6 +61,9 @@ void hardFault(void)
 void pendsvFault(void)
 {
     emb_printf("Pendsv in process N\n");
+    if(NVIC_FAULT_STAT_R & NVIC_FAULT_STAT_DERR == NVIC_FAULT_STAT_DERR || NVIC_FAULT_STAT_R & NVIC_FAULT_STAT_IERR == NVIC_FAULT_STAT_IERR)
+        emb_printf("called from MPU\n");
+
     while(1) { }
     // If the MPU DERR or IERR bits are set
     // clear them and display the message “called from MPU”

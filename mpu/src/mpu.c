@@ -58,24 +58,20 @@ int main()
 
     initFaults();
 
-    uint32_t varA = 25;
-    uint32_t varB = 50;
-
+    setupBackgroundRegion();
     allowFlashAccess();
     allowPeripheralAccess();
     setupSramAccess();
-    setSramAccessWindow(0x20000000, 0x8000);
     enableMPU();
 
-    uint8_t * my_stack_pointer = malloc_from_heap(2079);
+    uint8_t * my_stack_pointer = malloc_from_heap(1024);
 
     //setUnprivileged();
-
     //setPrivileged();
 
-    /*__asm("TEST_ADDR: .field 0x20000000");
-    __asm(" LDR R0, TEST_ADDR");
-    __asm(" STR R1, [R0]");*/
+    uint32_t varA = 25;
+    uint32_t varB = 50;
+
 	
     //enableTimer(TIMER1,A);
 
