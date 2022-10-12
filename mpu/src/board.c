@@ -11,6 +11,7 @@
 #include "gpio.h"
 #include "wait.h"
 #include "utilities.h"
+#include "rtos.h"
 
 void initBoard(void)
 {
@@ -138,14 +139,34 @@ void buttonShell(void)
         else if( isPressed(PB2) )
         {
             z = x/y;
-            return -1;
+            //return -1;
             //exit;
         }
 
         else if( isPressed(PB3) )
         {
             NVIC_SYS_HND_CTRL_R &= ~(NVIC_SYS_HND_CTRL_USAGE | NVIC_SYS_HND_CTRL_BUS | NVIC_SYS_HND_CTRL_MEM);
-            *bus_fault = 1;
+            __asm(" MOV R0, #1");
+            __asm(" MOV R1, #2");
+            __asm(" MOV R2, #3");
+            __asm(" MOV R3, #4");
+            *bus_fault = 1; // R0 is addr, R1 is value
+        }
+
+        else if( isPressed(PB4) )
+        {
+            setupBackgroundRegion();
+            allowFlashAccess();
+            setupSramAccess();
+            allowPeripheralAccess();
+            enableMPU();
+
+            setUnprivileged();
+
+
+
+            uint32_t x;
+            x = 123;
         }
     }
 

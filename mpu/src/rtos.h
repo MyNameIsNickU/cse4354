@@ -11,6 +11,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+extern void setPSP(uint32_t * address);
+extern void setASP(void);
+extern void setUnprivileged(void);
+extern void setPrivileged(void);
+
 
 void * malloc_from_heap(uint32_t size_in_bytes);
 

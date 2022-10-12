@@ -21,15 +21,15 @@ void setMPUFields(uint8_t region, uint32_t base_addr, uint64_t region_size)
 {
     uint32_t log2_value = emb_log2(region_size);
     NVIC_MPU_NUMBER_R = region;
-    NVIC_MPU_ATTR_R |= ((log2_value-1) << 1); // log2(size) - 1 shifted right one
-    NVIC_MPU_ATTR_R &= ~NVIC_MPU_ATTR_TEX_M;
     NVIC_MPU_BASE_R = (base_addr >> 5) << 5; // removes the bottom 5 bits, then shifts value back
+    NVIC_MPU_ATTR_R |= ((log2_value-1) << 1); // log2(size) - 1 shifted left one
+    NVIC_MPU_ATTR_R &= ~NVIC_MPU_ATTR_TEX_M;   
 }
 
 void setupBackgroundRegion(void)
 {
     setMPUFields(0, 0x00000000, 0x100000000); // (0xFFFFFFFF + 1)
-    NVIC_MPU_ATTR_R |= PERM_FA;
+    NVIC_MPU_ATTR_R |= PERM_FA | NVIC_MPU_ATTR_XN;
     NVIC_MPU_ATTR_R |= NVIC_MPU_ATTR_ENABLE;
 }
 
@@ -59,7 +59,7 @@ void setupSramAccess(void)
         region = SRAM_STARTING_REGION + (i-1); // regions 3-6
         setMPUFields(region, sram_base_addr, region_size);
         NVIC_MPU_ATTR_R |= PERM_PRIV | NVIC_MPU_ATTR_SHAREABLE | NVIC_MPU_ATTR_CACHEABLE | NVIC_MPU_ATTR_XN;
-        NVIC_MPU_ATTR_R &= ~NVIC_MPU_ATTR_SRD_M; // disable all of the Subregions
+        //NVIC_MPU_ATTR_R &= ~NVIC_MPU_ATTR_SRD_M; // disable all of the Subregions
         NVIC_MPU_ATTR_R |= NVIC_MPU_ATTR_ENABLE; // turn on Region
     }
 }
@@ -70,7 +70,7 @@ void setupSramAccess(void)
 // 0x20000000
 void setSramAccessWindow(uint32_t base_addr, uint32_t size_to_allocate)
 {
-    //uint32_t size_to_allocate = ((size_in_bytes + 1023) / 1024) * 1024; // rounds up to nearest 1 KiB
+    size_to_allocate = ((size_to_allocate + 1023) / 1024) * 1024; // rounds up to nearest 1 KiB
     int8_t subregions_to_touch = size_to_allocate >> 10; // how many subregions needed for the size requested
 	uint8_t subregion_index = (base_addr - 0x20000000) >> 10;
 	uint8_t start_region = ((base_addr - 0x20000000) >> 13) + SRAM_STARTING_REGION; // which of the 4 SRAM regions are we starting
@@ -88,13 +88,14 @@ void setSramAccessWindow(uint32_t base_addr, uint32_t size_to_allocate)
 	uint32_t srd_area = 0x000000FF;
 	subregions_to_touch = size_to_allocate >> 10;
 
-	while(subregions_to_touch > 0)
+	uint8_t i;
+	for(i = 0; i <= SRAM_STARTING_REGION; i++)
 	{
-	    NVIC_MPU_NUMBER_R = start_region;
-	    NVIC_MPU_ATTR_R |= ((srd_mask & srd_area) << 8);
-	    start_region++;
-	    srd_area <<= 8;
-	    subregions_to_touch -= 8;
+	    NVIC_MPU_NUMBER_R = SRAM_STARTING_REGION + i;
+	    // get the 8 bits of SRD mask, shift them down by which 8bits it's in
+	    // and then shift it left 8bits to get to SRD bits
+        NVIC_MPU_ATTR_R |= (((srd_mask & srd_area) >> i*8) << 8);
+        srd_area <<= 8;
 	}
 	//TODO: store srd_mask in TCB
 }

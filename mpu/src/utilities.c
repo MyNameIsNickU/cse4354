@@ -159,7 +159,7 @@ uint8_t emb_log2(uint64_t value)
     uint8_t count = 0;
     while(value > 1)
     {
-        value >> 1;
+        value >>= 1;
         count++;
     }
     return count;

@@ -9,6 +9,7 @@
 #include "rtos.h"
 #include "isr.h"
 #include "board.h"
+#include "test.h"
 
 void initHw()
 {
@@ -26,17 +27,13 @@ void initHw()
 
 //#define TOGGLE_PIN (*((volatile uint32_t *)(0x42000000 + (0x400243FC-0x40000000)*32 + 4*1))) // PE1
 
-extern void setPSP(uint32_t * address);
 
-extern void setASP(void);
-
-extern void setUnprivileged(void);
-
-extern void setPrivileged(void);
 
 //TODO: check if data section is setup properly in .cmd file
 //uint8_t heap[1024 * 28]; // 28 KiB Heap
 uint8_t * heap = (uint8_t *)0x20001000;
+//uint8_t * psp = (uint8_t*)0x20008000;
+uint32_t * psp = (uint32_t*)0x20008000;
 
 int main()
 {
@@ -53,30 +50,25 @@ int main()
     emb_printf("Initial setup complete!\n");
 
 
-    setPSP((uint32_t*)heap);
+    // i think this needs to be divided out more
+    //setPSP((uint32_t*)psp);
+    setPSP(psp);
     setASP();
 
     initFaults();
 
+    //buttonShell();
+
     setupBackgroundRegion();
     allowFlashAccess();
-    allowPeripheralAccess();
     setupSramAccess();
+    allowPeripheralAccess();
     enableMPU();
 
-    uint8_t * my_stack_pointer = malloc_from_heap(1024);
+    //heap_test();
+    sram_test();
 
-    //setUnprivileged();
-    //setPrivileged();
-
-    uint32_t varA = 25;
-    uint32_t varB = 50;
-
-	
-    //enableTimer(TIMER1,A);
-
-    shell();
-    //buttonShell();
+    //shell();
 
     while(1);
 }
