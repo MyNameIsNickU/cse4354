@@ -6,10 +6,10 @@
  */
 
 
+#include <rtos_library.h>
 #include "cmd.h"
 #include "uart0.h"
 #include "tm4c123gh6pm.h"
-#include "rtos.h"
 #include "utilities.h"
 #include "board.h"
 
@@ -409,7 +409,7 @@ bool handleCommand(USER_DATA* data)
     return false;
 }
 
-void shell()
+/*void shell()
 {
 	USER_DATA data;
 		
@@ -440,4 +440,4 @@ void shell()
 
 		//putcUart0('\n');
 	}
-}
+}*/
