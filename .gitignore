@@ -21,3 +21,15 @@ mpu/src/**
 ## Allow normal C files
 !mpu/src/*.c
 !mpu/src/*.h
+
+# Project
+## CCS Project Folders
+project/RemoteSystemsTempFiles/
+project/dvt/
+project/.jxbrowser.userdata/
+project/.metadata/
+project/src/**
+
+## Allow Normal C files
+!project/src/*.c
+!project/src/*.h
