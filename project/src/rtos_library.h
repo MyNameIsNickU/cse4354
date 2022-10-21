@@ -11,6 +11,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+void initSysTick(void);
+
 // assembly function defines
 extern void setPSP(uint32_t * address);
 extern void setASP(void);
@@ -18,6 +20,11 @@ extern void setUnprivileged(void);
 extern void setPrivileged(void);
 extern uint32_t * getPSP(void);
 extern uint32_t * getMSP(void);
+extern void pushCore(void);
+extern void popCore(void);
+extern void setupUnrun(uint32_t function_pointer);
+extern uint32_t extractR0(void);
+
 
 void reboot(void);
 void ps(void);

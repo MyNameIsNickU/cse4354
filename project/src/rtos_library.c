@@ -12,6 +12,16 @@
 #include "gpio.h"
 #include "utilities.h"
 
+#define SYSTICK_CTRL_R (*((volatile uint32_t*)0xE000E000 + 4))
+#define SYSTICK_LOAD_R (*((volatile uint32_t*)0xE000E000 + 5))
+#define SYSTICK_VAL_R  (*((volatile uint32_t*)0xE000E000 + 6))
+
+void initSysTick(void)
+{
+    SYSTICK_LOAD_R = 4001;
+    SYSTICK_CTRL_R |= (0x1 | 0x2);
+}
+
 void reboot(void)
 {
     // resets core and microcontroller

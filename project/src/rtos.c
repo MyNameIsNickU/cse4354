@@ -250,9 +250,11 @@ void initMpu(void)
 // RTOS Kernel Functions
 //-----------------------------------------------------------------------------
 
-// REQUIRED: initialize systick for 1ms system timer
 void initRtos()
 {
+    // SysTick set to 1 kHz or 1ms
+    initSysTick();
+
     uint8_t i;
     // no tasks running
     taskCount = 0;
@@ -362,12 +364,16 @@ void startRtos()
     setUnprivileged();
 
     // load the function call into variable
+
     // NOTE: this is defined on the new PSP so...
     // ...the task will always lose 4 bytes of data in its stack
-    _fn task = (_fn)tcb[taskCurrent].pid;
+    // for this method
+    tcb[taskCurrent].state = STATE_READY;
+    //_fn task = *((_fn)tcb[taskCurrent].pid)();
+    //(*task)();
 
-    // call the function
-    (*task)();
+
+    ((_fn)tcb[taskCurrent].pid)();
 }
 
 void yield()
@@ -405,24 +411,42 @@ void post(int8_t semaphore)
 // REQUIRED: in preemptive code, add code to request task switch
 void systickIsr()
 {
+    uint8_t i;
 	// clear pending systick
 	NVIC_INT_CTRL_R |= NVIC_INT_CTRL_PENDSTCLR;
-    //while(1) { }
+	
+	// TODO: do I search the entire tcb for a sleeping task?
+	// yes, i do
+
+	for(i = 0; i < MAX_TASKS; i++)
+	{
+	    if(tcb[i].state == STATE_DELAYED)
+	    {
+	        if(tcb[i].ticks == 0)
+	            tcb[i].state = STATE_READY;
+	        else
+	            tcb[i].ticks--;
+	    }
+	}
 }
 
 // REQUIRED: in coop and preemptive, modify this function to add support for task switching
 // REQUIRED: process UNRUN and READY tasks differently
 void pendSvIsr()
 {
-    emb_printf("Pendsv in process N");
+    //emb_printf("Pendsv in process N");
     if(NVIC_FAULT_STAT_R && NVIC_FAULT_STAT_DERR || NVIC_FAULT_STAT_R && NVIC_FAULT_STAT_IERR)
-        emb_printf("...called from MPU\n");
-    putcUart0('\n');
+    {
+        //emb_printf("...called from MPU\n");
+    }
+    //putcUart0('\n');
 
 
-    putcUart0('p');
+    //putcUart0('p');
 	
     //TODO: push stuff onto stack
+    // aren't the core resgisters already on the PSP at this point?
+    pushCore();
     uint32_t *psp = getPSP();
 
     // save the PSP
@@ -431,8 +455,26 @@ void pendSvIsr()
     // get a new task
     taskCurrent = rtosScheduler();
 
-    setPSP( (uint32_t*)tcb[taskCurrent].sp );
-		
+	// if task state is ready, then get the last known PSP value and pop the core registers
+    if(tcb[taskCurrent].state == STATE_READY)
+    {
+        setPSP( (uint32_t*)tcb[taskCurrent].sp );
+        // TODO: pop the registers from this new PSP
+        popCore();
+    }
+	// if task state is unrun, set PSP to initial value and load core registers with default values
+    else if(tcb[taskCurrent].state == STATE_UNRUN)
+    {
+        // Set psp
+        setPSP( (uint32_t*)tcb[taskCurrent].spInit );
+
+		// this should load a new LR and PC
+        setupUnrun( (uint32_t)tcb[taskCurrent].pid );
+
+
+        tcb[taskCurrent].state = STATE_READY;
+    }
+
 	// clear pending sv flag
 	NVIC_INT_CTRL_R |= NVIC_INT_CTRL_UNPEND_SV;
     //while(1) { }
@@ -442,8 +484,37 @@ void pendSvIsr()
 // REQUIRED: in preemptive code, add code to handle synchronization primitives
 void svCallIsr()
 {
-    //while(1) { }
-    putcUart0('s');
+    // get R0
+    uint32_t r0_value = extractR0();
+
+    //putcUart0('s');
+
+    // get the specific service requested
+    uint32_t *psp = getPSP();
+
+    // gets the PC from PSP
+    // thumb instructions are 16 b, so cast as 16b pointer
+    // PC points at the NEXT instruction to execute
+    // so go back one instruction to get the SVC instruction
+    // the lower 8b are the number used in the SVC.
+    uint16_t sv_instruct_value = *((uint16_t*)(*(psp+6)) - 1);
+    uint8_t sv_num = sv_instruct_value & 0xFF;
+	
+	if(sv_num == 21)
+	{
+		//putsUart0("YIELD.");
+	}
+
+    if(sv_num == 32)
+    {
+        //emb_printf("SLEEP.");
+        // set initial value of ticks to what was passed into R0
+        tcb[taskCurrent].ticks = r0_value;
+
+        // do I set the state to DELAYED?
+        tcb[taskCurrent].state = STATE_DELAYED;
+    }
+
     // set bit for pending SV call
     NVIC_INT_CTRL_R |= NVIC_INT_CTRL_PEND_SV;
 }
@@ -492,7 +563,7 @@ void mpuFaultIsr()
 
 void hardFaultIsr()
 {
-    emb_printf("Hard fault in process N\n");
+    emb_printf("Hard fault in process %u\n", taskCurrent);
 
     uint32_t * msp_pointer = getMSP();
     emb_printf(" MSP: 0x%x\n", msp_pointer);
@@ -507,13 +578,13 @@ void hardFaultIsr()
 
 void busFaultIsr()
 {
-    emb_printf("Bus fault in process N\n");
+    emb_printf("Bus fault in process %u\n", taskCurrent);
     while(1) { }
 }
 
 void usageFaultIsr()
 {
-    emb_printf("Usage fault in process N\n");
+    emb_printf("Usage fault in process %u\n", taskCurrent);
     while(1) { }
 }
 
@@ -555,12 +626,32 @@ uint8_t readPbs()
 // the idle task is implemented for this purpose
 void idle()
 {
-    putcUart0('i');
+
     while(true)
     {
+        //putcUart0('\n');
+        //putcUart0('i');
+        //putcUart0('o');
         setPinValue(ORANGE_LED, 1);
         waitMicrosecond(1000);
         setPinValue(ORANGE_LED, 0);
+        //waitMicrosecond(1000000);
+        yield();
+    }
+}
+
+void idle_another()
+{
+
+    while(true)
+    {
+        //putcUart0('\n');
+        //putcUart0('i');
+        //putcUart0('b');
+        setPinValue(BLUE_LED, 1);
+        waitMicrosecond(1000);
+        setPinValue(BLUE_LED, 0);
+        //waitMicrosecond(1000000);
         yield();
     }
 }
@@ -759,17 +850,18 @@ int main(void)
 
     // Add required idle process at lowest priority
     ok =  createThread(idle, "Idle", 7, 1024);
+    ok &=  createThread(idle_another, "IdleAnth", 7, 1024);
 
     // Add other processes
-    /*ok &= createThread(lengthyFn, "LengthyFn", 6, 1024);
+//    ok &= createThread(lengthyFn, "LengthyFn", 6, 1024);
     ok &= createThread(flash4Hz, "Flash4Hz", 4, 1024);
-    ok &= createThread(oneshot, "OneShot", 2, 1024);
-    ok &= createThread(readKeys, "ReadKeys", 6, 1024);
-    ok &= createThread(debounce, "Debounce", 6, 1024);
-    ok &= createThread(important, "Important", 0, 1024);
-    ok &= createThread(uncooperative, "Uncoop", 6, 1024);
-    ok &= createThread(errant, "Errant", 6, 1024);
-    ok &= createThread(shell, "Shell", 6, 2048);*/
+//    ok &= createThread(oneshot, "OneShot", 2, 1024);
+//    ok &= createThread(readKeys, "ReadKeys", 6, 1024);
+//    ok &= createThread(debounce, "Debounce", 6, 1024);
+//    ok &= createThread(important, "Important", 0, 1024);
+//    ok &= createThread(uncooperative, "Uncoop", 6, 1024);
+//    ok &= createThread(errant, "Errant", 6, 1024);
+//    ok &= createThread(shell, "Shell", 6, 2048);
 
     // Start up RTOS
     if (ok)
