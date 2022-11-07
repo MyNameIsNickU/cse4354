@@ -8,7 +8,7 @@
 #include "utilities.h"
 #include "uart0.h"
 
-#define MAX_BUFFER_SIZE 255
+#define MAX_BUFFER_SIZE 50
 
 // Reentrant safe (multi-threaded safe) printf function
 // NOTE: does not handle negative integers

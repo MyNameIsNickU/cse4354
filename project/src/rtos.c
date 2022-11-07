@@ -65,6 +65,17 @@
 // RTOS Defines and Kernel Variables
 //-----------------------------------------------------------------------------
 
+
+typedef enum _svcNum{
+    SVC_RESTART = 66,
+    SVC_STOP = 86,
+    SVC_PRIO = 33,
+    SVC_YIELD = 21,
+    SVC_SLEEP = 32,
+    SVC_WAIT = 43,
+    SVC_POST = 54
+} svcNum;
+
 // function pointer
 typedef void (*_fn)();
 
@@ -90,6 +101,7 @@ semaphore semaphores[MAX_SEMAPHORES];
 #define STATE_READY      2 // has run, can resume at any time
 #define STATE_DELAYED    3 // has run, but now awaiting timer
 #define STATE_BLOCKED    4 // has run, but now blocked by semaphore
+#define STATE_KILLED     5 // has run, but now has been killed
 
 #define MAX_TASKS 12       // maximum number of valid tasks
 uint8_t taskCurrent = 0;   // index of last dispatched task
@@ -97,8 +109,8 @@ uint8_t taskCount = 0;     // total number of valid tasks
 
 // REQUIRED: add store and management for the memory used by the thread stacks
 //           thread stacks must start on 1 kiB boundaries so mpu can work correctly
-uint8_t * heap = (uint8_t *)0x20001000;
-uint8_t * psp = (uint8_t*)0x20008000;
+uint8_t * heap_bottom = (uint8_t *)0x20001000;
+//uint8_t * psp = (uint8_t*)0x20008000;
 
 struct _tcb
 {
@@ -134,51 +146,53 @@ uint32_t getSRD(uint32_t base_addr, uint32_t size_to_allocate)
         srd_mask += (1 << subregion_index++);
         subregions_to_touch--;
     }
-
+#ifdef DEBUG
     emb_printf("SRD_Mask: 0x%X\n", srd_mask);
+#endif
 
     return srd_mask;
+}
 
-
-    // TODO: take this part and put it into its own setSRD() function
-    /*uint32_t srd_area = 0x000000FF;
-    subregions_to_touch = size_to_allocate >> 10;
-
+void setSRD(uint32_t srd_mask)
+{
+    uint32_t srd_area = 0x000000FF;
     uint8_t i;
+
     for(i = 0; i <= SRAM_STARTING_REGION; i++)
     {
         NVIC_MPU_NUMBER_R = SRAM_STARTING_REGION + i;
         // get the 8 bits of SRD mask, shift them down by which 8bits it's in
-        // and then shift it left 8bits to get to SRD bits
+        // and then shift it left 8bits to get to SRD bits region of the ATTR register
         NVIC_MPU_ATTR_R |= (((srd_mask & srd_area) >> i*8) << 8);
         srd_area <<= 8;
-    }*/
+    }
 }
 
 
 // TODO: add your malloc code here and update the SRD bits for the current thread
+// NOTE: this will eventually just become a SVC
 void * mallocFromHeap(uint32_t size_in_bytes)
 {
+
     void * temp = NULL;
-    //extern uint8_t * heap;
-    uint32_t size_to_allocate = size_in_bytes;
 
     // rounds up to the nearest 1 KiB
     // ASSUME: should already be rounded up
-    //size_to_allocate = ((size_in_bytes + 1023) / 1024) * 1024;
 
-    if(heap < (uint8_t*)0x20008000)
+    if(heap_bottom < (uint8_t*)0x20008000)
     {
-        temp = heap;
-        heap += size_to_allocate;
+        temp = heap_bottom;
+        heap_bottom += size_in_bytes;
     }
 
     //setSRD((uint32_t)temp, size_to_allocate);
 
     //emb_printf("Size wanted: %u\n", size_in_bytes);
-    emb_printf("Size to allocate: %u\n", size_to_allocate);
+#ifdef DEBUG
+    emb_printf("Size to allocate: %u\n", size_in_bytes);
     emb_printf("Address Allocated: 0x%x\n", temp);
-    emb_printf("New Heap Pointer: 0x%x\n", heap);
+    emb_printf("New Heap Pointer: 0x%x\n", heap_bottom);
+#endif
 
     return temp;
 }
@@ -194,7 +208,7 @@ void setMPUFields(uint8_t region, uint32_t base_addr, uint64_t region_size)
     uint32_t log2_value = emb_log2(region_size);
     NVIC_MPU_NUMBER_R = region;
     NVIC_MPU_BASE_R = (base_addr >> 5) << 5; // removes the bottom 5 bits, then shifts value back
-    NVIC_MPU_ATTR_R |= ((log2_value-1) << 1); // log2(size) - 1 shifted left one
+    NVIC_MPU_ATTR_R |= ((log2_value-1) << 1); // ( log2(size) - 1 ) shifted left one
     NVIC_MPU_ATTR_R &= ~NVIC_MPU_ATTR_TEX_M;
 }
 
@@ -237,11 +251,10 @@ void setupSramAccess(void)
 
 void initMpu(void)
 {
-    // REQUIRED: call your MPU functions here
     setupBackgroundRegion();
     allowFlashAccess();
     allowPeripheralAccess();
-    //setupSramAccess();
+    setupSramAccess();
 
     NVIC_MPU_CTRL_R |= NVIC_MPU_CTRL_ENABLE; // enable MPU
 }
@@ -282,6 +295,8 @@ int rtosScheduler()
     return task;
 }
 
+// could also stuff the PSP stack here when we create the thread
+// ...for the case when the thread hasn't been run yet
 bool createThread(_fn fn, const char name[], uint8_t priority, uint32_t stackBytes)
 {
     stackBytes = ((stackBytes + 1023) / 1024) * 1024;
@@ -328,6 +343,7 @@ bool createThread(_fn fn, const char name[], uint8_t priority, uint32_t stackByt
 // REQUIRED: modify this function to restart a thread
 void restartThread(_fn fn)
 {
+    __asm(" SVC #66");
 }
 
 // REQUIRED: modify this function to stop a thread
@@ -335,11 +351,13 @@ void restartThread(_fn fn)
 // NOTE: see notes in class for strategies on whether stack is freed or not
 void stopThread(_fn fn)
 {
+    __asm(" SVC #86");
 }
 
 // REQUIRED: modify this function to set a thread priority
 void setThreadPriority(_fn fn, uint8_t priority)
 {
+    __asm(" SVC #33");
 }
 
 bool createSemaphore(uint8_t semaphore, uint8_t count)
@@ -351,6 +369,24 @@ bool createSemaphore(uint8_t semaphore, uint8_t count)
     return ok;
 }
 
+void callInitFunction(void)
+{
+	// NOTE: this is defined on the new PSP so...
+    // ...the task will always lose 4 bytes of data in its stack
+    // for this method
+    // load the function call into variable
+	_fn task = (_fn)tcb[taskCurrent].pid;
+	tcb[taskCurrent].state = STATE_READY;
+
+	setSRD(tcb[taskCurrent].srd);
+
+	// must access the tcb struct before getting set to unpriv
+	setUnprivileged();
+
+	// set the PC to the beginning of the given process
+    //((_fn)tcb[taskCurrent].pid)();
+	task();
+}
 // REQUIRED: modify this function to start the operating system
 // by calling scheduler, setting PSP, ASP bit, TMPL bit, and PC
 void startRtos()
@@ -361,19 +397,9 @@ void startRtos()
     setPSP(tcb[taskCurrent].spInit);
     // use PSP
     setASP();
-    setUnprivileged();
 
-    // load the function call into variable
-
-    // NOTE: this is defined on the new PSP so...
-    // ...the task will always lose 4 bytes of data in its stack
-    // for this method
-    tcb[taskCurrent].state = STATE_READY;
-    //_fn task = *((_fn)tcb[taskCurrent].pid)();
-    //(*task)();
-
-
-    ((_fn)tcb[taskCurrent].pid)();
+    // use the new psp for the first task
+    callInitFunction();
 }
 
 void yield()
@@ -412,12 +438,12 @@ void post(int8_t semaphore)
 void systickIsr()
 {
     uint8_t i;
+
 	// clear pending systick
 	NVIC_INT_CTRL_R |= NVIC_INT_CTRL_PENDSTCLR;
 	
-	// TODO: do I search the entire tcb for a sleeping task?
+	// do I search the entire tcb for a sleeping task?
 	// yes, i do
-
 	for(i = 0; i < MAX_TASKS; i++)
 	{
 	    if(tcb[i].state == STATE_DELAYED)
@@ -432,20 +458,35 @@ void systickIsr()
 
 // REQUIRED: in coop and preemptive, modify this function to add support for task switching
 // REQUIRED: process UNRUN and READY tasks differently
+// this interrupt cannot be called during another interrupt
+// can only be called from Thread mode
+// if called from an interrupt, the interrupt left will never finish
 void pendSvIsr()
 {
-    //emb_printf("Pendsv in process N");
-    if(NVIC_FAULT_STAT_R && NVIC_FAULT_STAT_DERR || NVIC_FAULT_STAT_R && NVIC_FAULT_STAT_IERR)
+    semaphore *sem;
+    uint8_t j;
+
+    // if called from MPU fault, kill the current thread
+    if(NVIC_FAULT_STAT_R & NVIC_FAULT_STAT_DERR || NVIC_FAULT_STAT_R & NVIC_FAULT_STAT_IERR)
     {
         //emb_printf("...called from MPU\n");
+        tcb[taskCurrent].state = STATE_KILLED;
+
+        // remove task from process queue
+        sem = (semaphore*)tcb[taskCurrent].semaphore;
+        // if the process is waiting on a semaphore
+        // ...then remove that task from the process queue
+        if( sem != NULL && sem->queueSize != 0 )
+        {
+            for(j = 0; j < sem->queueSize - 1; j++)
+                sem->processQueue[j] = sem->processQueue[j+1];
+            sem->queueSize--;
+        }
+
     }
-    //putcUart0('\n');
-
-
-    //putcUart0('p');
 	
-    //TODO: push stuff onto stack
-    // aren't the core resgisters already on the PSP at this point?
+    // aren't the core resgisters already on the PSP at this point by h/w?
+    // yes, but R4-R11 aren't
     pushCore();
     uint32_t *psp = getPSP();
 
@@ -455,25 +496,29 @@ void pendSvIsr()
     // get a new task
     taskCurrent = rtosScheduler();
 
-	// if task state is ready, then get the last known PSP value and pop the core registers
+	// if task state is ready, then restore the last known PSP value and pop the core registers
     if(tcb[taskCurrent].state == STATE_READY)
     {
         setPSP( (uint32_t*)tcb[taskCurrent].sp );
-        // TODO: pop the registers from this new PSP
+        // pop the registers from this new PSP
         popCore();
     }
 	// if task state is unrun, set PSP to initial value and load core registers with default values
     else if(tcb[taskCurrent].state == STATE_UNRUN)
     {
-        // Set psp
+        // Set psp to initial value
         setPSP( (uint32_t*)tcb[taskCurrent].spInit );
 
-		// this should load a new LR and PC
+		// this should load in all R4-R11
+        // similar to popCore, but loads in set defined values
         setupUnrun( (uint32_t)tcb[taskCurrent].pid );
 
-
+        // set the state ready
         tcb[taskCurrent].state = STATE_READY;
     }
+
+    // update the MPU with the prev stored SRD mask bits
+    setSRD(tcb[taskCurrent].srd);
 
 	// clear pending sv flag
 	NVIC_INT_CTRL_R |= NVIC_INT_CTRL_UNPEND_SV;
@@ -484,14 +529,16 @@ void pendSvIsr()
 // REQUIRED: in preemptive code, add code to handle synchronization primitives
 void svCallIsr()
 {
-    // get R0
-    uint32_t r0_value = extractR0();
-
-    //putcUart0('s');
-
-    // get the specific service requested
+    // get the PSP in order to get pushed value of PC
     uint32_t *psp = getPSP();
 
+    // get R0
+    // check if there is a quicker way to do this...there was -_-
+    uint32_t r0_value = *psp;
+    uint32_t r1_value = *(psp+1);
+
+
+    // to get the specific service requested...
     // gets the PC from PSP
     // thumb instructions are 16 b, so cast as 16b pointer
     // PC points at the NEXT instruction to execute
@@ -499,31 +546,128 @@ void svCallIsr()
     // the lower 8b are the number used in the SVC.
     uint16_t sv_instruct_value = *((uint16_t*)(*(psp+6)) - 1);
     uint8_t sv_num = sv_instruct_value & 0xFF;
-	
-	if(sv_num == 21)
-	{
-		//putsUart0("YIELD.");
-	}
 
-    if(sv_num == 32)
+    semaphore *sem;
+
+    uint8_t i,j;
+
+    switch(sv_num)
     {
-        //emb_printf("SLEEP.");
+	// yield
+    case SVC_YIELD:
+        // set bit for pending SV call to trigger task switch
+        NVIC_INT_CTRL_R |= NVIC_INT_CTRL_PEND_SV;
+        break;
+	// sleep
+    case SVC_SLEEP:
         // set initial value of ticks to what was passed into R0
         tcb[taskCurrent].ticks = r0_value;
 
-        // do I set the state to DELAYED?
+        // state is now delayed due to waiting for sleep to complete
         tcb[taskCurrent].state = STATE_DELAYED;
+
+        // i don't think this will work. the codes runs for a little bit before switching
+        // set bit for pending SV call to trigger task switch
+        NVIC_INT_CTRL_R |= NVIC_INT_CTRL_PEND_SV;
+        break;
+	// wait
+    case SVC_WAIT:
+
+		// if the semaphore count is 0, then the task must wait until the semp. posts
+        // this is when a task goes inside the queue
+        // don't put it in queue if queue size has hit max
+		if(semaphores[r0_value].count == 0 && semaphores[r0_value].queueSize < MAX_QUEUE_SIZE )
+		{
+		    // load task with the semaphore address
+            tcb[taskCurrent].semaphore = &semaphores[r0_value];
+            // put the task index in the semaphores queue and increment the queue size (index)
+            semaphores[r0_value].processQueue[semaphores[r0_value].queueSize++] = taskCurrent;
+		    // task is now waiting on a semaphore to post
+		    tcb[taskCurrent].state = STATE_BLOCKED;
+
+		    // set bit for pending SV call to trigger task switch
+            NVIC_INT_CTRL_R |= NVIC_INT_CTRL_PEND_SV;
+		}
+		else
+		    semaphores[r0_value].count--;
+        break;
+    //post
+    case SVC_POST:
+
+        // increment the semaphore value
+        semaphores[r0_value].count++;
+
+        // the semaphore went from 0 -> 1, this means a process was likely waiting on it
+        // there also must be something in the queue to clear
+        if(semaphores[r0_value].count == 1 && semaphores[r0_value].queueSize > 0)
+        {
+            tcb[semaphores[r0_value].processQueue[0]].state = STATE_READY;
+            tcb[semaphores[r0_value].processQueue[0]].semaphore = NULL;
+
+            // if a task was waiting on this semaphore, it then takes the value just incremented for itself
+            semaphores[r0_value].count--;
+
+            // TODO: When do I remove a task from the queue?
+           // do I leave it in there when I post, only removing when the task is destroyed?
+           // NO, remove the task from the queue
+            //shift the process queue over left one
+            for(i = 0; i < semaphores[r0_value].queueSize - 1; i++ )
+            {
+                semaphores[r0_value].processQueue[i] = semaphores[r0_value].processQueue[i+1];
+            }
+            semaphores[r0_value].queueSize--;
+        }
+        break;
+    case SVC_RESTART:
+        for(i = 0; i < MAX_TASKS; i++)
+        {
+            // found the requested thread
+            if((uint32_t)tcb[i].pid == r0_value)
+            {
+                tcb[i].sp = tcb[i].spInit;
+                tcb[i].state = STATE_UNRUN;
+            }
+        }
+        break;
+    case SVC_STOP:
+        for(i = 0; i < MAX_TASKS; i++)
+        {
+            // found the requested thread
+            if((uint32_t)tcb[i].pid == r0_value)
+            {
+                tcb[i].state = STATE_KILLED;
+                sem = (semaphore*)tcb[i].semaphore;
+                // if the process is waiting on a semaphore
+                // ...then remove that task from the process queue
+                if( sem != NULL && sem->queueSize != 0 )
+                {
+                    for(j = 0; j < sem->queueSize - 1; j++)
+                        sem->processQueue[j] = sem->processQueue[j+1];
+                    sem->queueSize--;
+                }
+            }
+        }
+        break;
+    // void setThreadPriority(_fn fn, uint8_t priority)
+    case SVC_PRIO:
+        for(i = 0; i < MAX_TASKS; i++)
+        {
+            // found the requested thread
+            if((uint32_t)tcb[i].pid == r0_value)
+            {
+
+            }
+        }
+        break;
     }
 
-    // set bit for pending SV call
-    NVIC_INT_CTRL_R |= NVIC_INT_CTRL_PEND_SV;
 }
 
 void mpuFaultIsr()
 {
     uint32_t * msp_pointer = getMSP();
     uint32_t * psp_pointer = getPSP();
-    uint8_t mem_fault_bool = 0;
+    uint8_t mem_fault_bool = NVIC_FAULT_STAT_R && NVIC_FAULT_STAT_MMARV;
 
     emb_printf("MPU fault in process N\n");
 
@@ -543,7 +687,6 @@ void mpuFaultIsr()
     uint32_t mfault_stat = NVIC_FAULT_STAT_R;
 
     // if MM Fault Address is valid
-    mem_fault_bool = NVIC_FAULT_STAT_R && NVIC_FAULT_STAT_MMARV;
     if(mem_fault_bool)
     {
         bad_instruct = *(uint32_t*)bad_instruct;
@@ -607,7 +750,6 @@ void initHw()
     NVIC_CFG_CTRL_R |= NVIC_CFG_CTRL_DIV0;
 }
 
-// TODO: test LEDs and PBs
 uint8_t readPbs()
 {
     return getButtons();
@@ -627,6 +769,10 @@ uint8_t readPbs()
 void idle()
 {
 
+    __asm(" MOV R4, #35");
+    __asm(" MOV R5, #46");
+    __asm(" MOV R6, #57");
+
     while(true)
     {
         //putcUart0('\n');
@@ -642,6 +788,10 @@ void idle()
 
 void idle_another()
 {
+
+    __asm(" MOV R4, #100");
+    __asm(" MOV R5, #101");
+    __asm(" MOV R6, #102");
 
     while(true)
     {
@@ -662,6 +812,15 @@ void flash4Hz()
     {
         setPinValue(GREEN_LED, !getPinValue(GREEN_LED));
         sleep(125);
+    }
+}
+
+void flash2Hz()
+{
+    while(true)
+    {
+        setPinValue(RED_LED, !getPinValue(RED_LED));
+        sleep(250);
     }
 }
 
@@ -691,8 +850,9 @@ void lengthyFn()
 
     // Example of allocating memory from stack
     // This will show up in the pmap command for this thread
-    p = mallocFromHeap(1024);
-    *p = 0;
+
+//    p = mallocFromHeap(1024);
+//    *p = 0;
 
     while(true)
     {
@@ -726,6 +886,7 @@ void readKeys()
         }
         if ((buttons & 2) != 0)
         {
+            //putcUart0('f');
             post(flashReq);
             setPinValue(RED_LED, 0);
         }
@@ -801,17 +962,62 @@ void important()
 }
 
 // REQUIRED: add processing for the shell commands through the UART here
+//inline void shell() could name my shell somehting else and call it here
+// this copies the contents of the inline function to the locatino of the function call
 void shell()
 {
     USER_DATA data;
+    bool valid_input = false;
+    uint8_t i;
     while (true)
     {
         putcUart0('>');
         getsUart0(&data);
         parseFields(&data);
 
-        if( handleCommand(&data) ) { }
-        else
+        // always pass data, "what string do you want to check", how many args
+        if( isCommand(&data, "help", 0) )
+        {
+            putsUart0("\nPossible commands:\n");
+            putsUart0("'reboot'\r");
+            putsUart0("'clear'\r");
+            putsUart0("'ps'\r");
+            putsUart0("'ipcs'\r");
+            putsUart0("'kill [PID#]'\r");
+            putsUart0("'pmap [PID#]'\r");
+            putsUart0("'preempt [ON|OFF]'\r");
+            putsUart0("'sched [PRIO|RR]'\r");
+            putsUart0("'pidof [proc_name]'\r");
+            putsUart0("'run [proc_name]'\r");
+            putsUart0("'test [LED|Button]'\r\n");
+
+            valid_input = true;
+        }
+
+        else if( isCommand(&data, "reboot", 0) )
+        {
+            // resets core and microcontroller
+            NVIC_APINT_R = NVIC_APINT_VECTKEY | NVIC_APINT_SYSRESETREQ; // resets perphs and regs
+            valid_input = true;
+        }
+
+        else if( isCommand(&data, "clear", 0) || isCommand(&data, "cls", 0))
+        {
+            for(i = 0; i < 50; i++)
+            putcUart0('\n');
+            valid_input = true;
+        }
+
+        else if( isCommand(&data, "ps", 0) )
+        {
+            for(i = 0; i < MAX_TASKS; i++)
+            {
+                emb_printf("Task %u:\tstate:%u\n", i, tcb[i].state);
+            }
+            valid_input = true;
+        }
+
+        if(!valid_input)
         {
             emb_printf("Invalid input: '%s'\n", &data.buffer[0]);
         }
@@ -850,15 +1056,16 @@ int main(void)
 
     // Add required idle process at lowest priority
     ok =  createThread(idle, "Idle", 7, 1024);
-    ok &=  createThread(idle_another, "IdleAnth", 7, 1024);
+//    ok &=  createThread(idle_another, "IdleAnth", 7, 1024);
 
     // Add other processes
-//    ok &= createThread(lengthyFn, "LengthyFn", 6, 1024);
+    ok &= createThread(lengthyFn, "LengthyFn", 6, 1024);
     ok &= createThread(flash4Hz, "Flash4Hz", 4, 1024);
-//    ok &= createThread(oneshot, "OneShot", 2, 1024);
-//    ok &= createThread(readKeys, "ReadKeys", 6, 1024);
-//    ok &= createThread(debounce, "Debounce", 6, 1024);
-//    ok &= createThread(important, "Important", 0, 1024);
+//    ok &= createThread(flash2Hz, "Flash2Hz", 4, 1024);
+    ok &= createThread(oneshot, "OneShot", 2, 1024);
+    ok &= createThread(readKeys, "ReadKeys", 6, 1024);
+    ok &= createThread(debounce, "Debounce", 6, 1024);
+    ok &= createThread(important, "Important", 0, 1024);
 //    ok &= createThread(uncooperative, "Uncoop", 6, 1024);
 //    ok &= createThread(errant, "Errant", 6, 1024);
 //    ok &= createThread(shell, "Shell", 6, 2048);

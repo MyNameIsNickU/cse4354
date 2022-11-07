@@ -18,8 +18,14 @@
 
 void initSysTick(void)
 {
-    SYSTICK_LOAD_R = 4001;
-    SYSTICK_CTRL_R |= (0x1 | 0x2);
+	// datasheet says for 100 ticks, put value of 99
+	
+    NVIC_ST_RELOAD_R = 0x0;
+
+    NVIC_ST_RELOAD_R = 39999;
+    // reset value is not 1 for clock source, must set the bit
+    // TI lied!
+	NVIC_ST_CTRL_R |= (NVIC_ST_CTRL_CLK_SRC | NVIC_ST_CTRL_INTEN | NVIC_ST_CTRL_ENABLE);
 }
 
 void reboot(void)
@@ -89,6 +95,4 @@ void pidof(const char name[])
 void runProcess(const char name[])
 {
     emb_printf("Running: %s\n", name);
-
-
 }

@@ -103,27 +103,27 @@ uint8_t getButtons(void)
 {
     uint8_t return_value = 0;
 
-    if(PB0_BB)
+    if(!PB0_BB)
     {
         return_value += PB0;
     }
-    if(PB1_BB)
+    if(!PB1_BB)
     {
         return_value += PB1;
     }
-    if(PB2_BB)
+    if(!PB2_BB)
     {
         return_value += PB2;
     }
-    if(PB3_BB)
+    if(!PB3_BB)
     {
         return_value += PB3;
     }
-    if(PB4_BB)
+    if(!PB4_BB)
     {
         return_value += PB4;
     }
-    if(PB5_BB)
+    if(!PB5_BB)
     {
         return_value += PB5;
     }
