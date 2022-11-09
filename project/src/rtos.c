@@ -65,6 +65,8 @@
 // RTOS Defines and Kernel Variables
 //-----------------------------------------------------------------------------
 
+bool preemptionActive = false;
+bool priorityActive = false;
 
 typedef enum _svcNum{
     SVC_RESTART = 66,
@@ -136,7 +138,8 @@ uint32_t getSRD(uint32_t base_addr, uint32_t size_to_allocate)
 {
     size_to_allocate = ((size_to_allocate + 1023) / 1024) * 1024; // rounds up to nearest 1 KiB
     int8_t subregions_to_touch = size_to_allocate >> 10; // how many subregions needed for the size requested
-    uint8_t subregion_index = (base_addr - 0x20000000) >> 10;
+    // add one to the base addr to get to the 1K divisible boundary
+    uint8_t subregion_index = (base_addr+1 - 0x20000000) >> 10;
     //uint8_t start_region = ((base_addr - 0x20000000) >> 13) + SRAM_STARTING_REGION; // which of the 4 SRAM regions are we starting
 
     uint32_t srd_mask = 0;
@@ -173,10 +176,12 @@ void setSRD(uint32_t srd_mask)
 // NOTE: this will eventually just become a SVC
 void * mallocFromHeap(uint32_t size_in_bytes)
 {
+    // if unprivileged
+    // do a service call
+    // else do what's already here
 
     void * temp = NULL;
 
-    // rounds up to the nearest 1 KiB
     // ASSUME: should already be rounded up
 
     if(heap_bottom < (uint8_t*)0x20008000)
@@ -279,18 +284,30 @@ void initRtos()
     }
 }
 
-// REQUIRED: Implement prioritization to 8 levels
 int rtosScheduler()
 {
     bool ok;
     static uint8_t task = 0xFF;
+    uint8_t i;
     ok = false;
-    while (!ok)
+
+    // TODO: check this
+    if(priorityActive)
     {
-        task++;
-        if (task >= MAX_TASKS)
-            task = 0;
-        ok = (tcb[task].state == STATE_READY || tcb[task].state == STATE_UNRUN);
+        task++; // this should handle switching between same prior tasks
+        for(i = 0; i < MAX_TASKS; i++)
+            if(tcb[i].state == STATE_READY && tcb[i].priority > tcb[task].priority )
+                task = i;
+    }
+    else
+    {
+        while (!ok)
+        {
+            task++;
+            if (task >= MAX_TASKS)
+                task = 0;
+            ok = (tcb[task].state == STATE_READY || tcb[task].state == STATE_UNRUN);
+        }
     }
     return task;
 }
@@ -326,7 +343,7 @@ bool createThread(_fn fn, const char name[], uint8_t priority, uint32_t stackByt
             // pid is the function address
             tcb[i].pid = fn;
             // allocate stack space and store top of stack in sp and spInit
-            tcb[i].sp = ((uint8_t*)mallocFromHeap(stackBytes) + stackBytes);
+            tcb[i].sp = ((uint8_t*)mallocFromHeap(stackBytes) + stackBytes - 1);
             tcb[i].spInit = tcb[i].sp;
             tcb[i].priority = priority;
             // calculates SRD mask based off of initial base address and size of stack requested
@@ -363,32 +380,14 @@ void setThreadPriority(_fn fn, uint8_t priority)
 bool createSemaphore(uint8_t semaphore, uint8_t count)
 {
     bool ok = (semaphore < MAX_SEMAPHORES);
+    if(ok)
     {
         semaphores[semaphore].count = count;
     }
     return ok;
 }
 
-void callInitFunction(void)
-{
-	// NOTE: this is defined on the new PSP so...
-    // ...the task will always lose 4 bytes of data in its stack
-    // for this method
-    // load the function call into variable
-	_fn task = (_fn)tcb[taskCurrent].pid;
-	tcb[taskCurrent].state = STATE_READY;
-
-	setSRD(tcb[taskCurrent].srd);
-
-	// must access the tcb struct before getting set to unpriv
-	setUnprivileged();
-
-	// set the PC to the beginning of the given process
-    //((_fn)tcb[taskCurrent].pid)();
-	task();
-}
-// REQUIRED: modify this function to start the operating system
-// by calling scheduler, setting PSP, ASP bit, TMPL bit, and PC
+// calls scheduler, sets PSP, ASP bit, TMPL bit, and PC
 void startRtos()
 {
     // get index of task to run from tcb
@@ -398,8 +397,21 @@ void startRtos()
     // use PSP
     setASP();
 
-    // use the new psp for the first task
-    callInitFunction();
+    // NOTE: this is defined on the new PSP so...
+    // ...the task will always lose 4 bytes of data in its stack
+    // for this method
+    // load the function call into variable
+    _fn task = (_fn)tcb[taskCurrent].pid;
+    tcb[taskCurrent].state = STATE_READY;
+
+    setSRD(tcb[taskCurrent].srd);
+
+    // must access the tcb struct before getting set to unpriv
+    setUnprivileged();
+
+    // set the PC to the beginning of the given process
+    //((_fn)tcb[taskCurrent].pid)();
+    task();
 }
 
 void yield()
@@ -417,7 +429,6 @@ void sleep(uint32_t tick)
     __asm(" SVC #32");
 }
 
-// REQUIRED: modify this function to wait a semaphore using pendsv
 void wait(int8_t semaphore)
 {
     // indicates a needed service call for service "43"
@@ -425,7 +436,6 @@ void wait(int8_t semaphore)
     __asm(" SVC #43");
 }
 
-// REQUIRED: modify this function to signal a semaphore is available using pendsv
 void post(int8_t semaphore)
 {
     // indicates a needed service call for service "54"
@@ -433,15 +443,13 @@ void post(int8_t semaphore)
     __asm(" SVC #54");
 }
 
-// REQUIRED: modify this function to add support for the system timer
-// REQUIRED: in preemptive code, add code to request task switch
 void systickIsr()
 {
     uint8_t i;
 
 	// clear pending systick
 	NVIC_INT_CTRL_R |= NVIC_INT_CTRL_PENDSTCLR;
-	
+
 	// do I search the entire tcb for a sleeping task?
 	// yes, i do
 	for(i = 0; i < MAX_TASKS; i++)
@@ -454,10 +462,12 @@ void systickIsr()
 	            tcb[i].ticks--;
 	    }
 	}
+
+	// if preemption is active, trigger a task switch
+	if(preemptionActive)
+	    NVIC_INT_CTRL_R |= NVIC_INT_CTRL_PEND_SV;
 }
 
-// REQUIRED: in coop and preemptive, modify this function to add support for task switching
-// REQUIRED: process UNRUN and READY tasks differently
 // this interrupt cannot be called during another interrupt
 // can only be called from Thread mode
 // if called from an interrupt, the interrupt left will never finish
@@ -469,6 +479,7 @@ void pendSvIsr()
     // if called from MPU fault, kill the current thread
     if(NVIC_FAULT_STAT_R & NVIC_FAULT_STAT_DERR || NVIC_FAULT_STAT_R & NVIC_FAULT_STAT_IERR)
     {
+        NVIC_FAULT_STAT_R |= NVIC_FAULT_STAT_DERR | NVIC_FAULT_STAT_IERR;
         //emb_printf("...called from MPU\n");
         tcb[taskCurrent].state = STATE_KILLED;
 
@@ -607,7 +618,7 @@ void svCallIsr()
             // if a task was waiting on this semaphore, it then takes the value just incremented for itself
             semaphores[r0_value].count--;
 
-            // TODO: When do I remove a task from the queue?
+            // When do I remove a task from the queue?
            // do I leave it in there when I post, only removing when the task is destroyed?
            // NO, remove the task from the queue
             //shift the process queue over left one
@@ -639,10 +650,15 @@ void svCallIsr()
                 sem = (semaphore*)tcb[i].semaphore;
                 // if the process is waiting on a semaphore
                 // ...then remove that task from the process queue
+                // ...and shift the process queue over
                 if( sem != NULL && sem->queueSize != 0 )
                 {
-                    for(j = 0; j < sem->queueSize - 1; j++)
+                    // find the task inside the process queue
+                    for(j = 0; j < sem->queueSize - 1 && i != sem->processQueue[j]; j++) { }
+                    // shift the queue from the found task
+                    for(; j < sem->queueSize - 1; j++)
                         sem->processQueue[j] = sem->processQueue[j+1];
+                    // decrement the size of the queue
                     sem->queueSize--;
                 }
             }
@@ -655,7 +671,7 @@ void svCallIsr()
             // found the requested thread
             if((uint32_t)tcb[i].pid == r0_value)
             {
-
+                tcb[i].priority = r1_value;
             }
         }
         break;
@@ -669,7 +685,7 @@ void mpuFaultIsr()
     uint32_t * psp_pointer = getPSP();
     uint8_t mem_fault_bool = NVIC_FAULT_STAT_R && NVIC_FAULT_STAT_MMARV;
 
-    emb_printf("MPU fault in process N\n");
+    emb_printf("MPU fault in process %u\n", taskCurrent);
 
     emb_printf(" MSP: 0x%x\n", msp_pointer);
     emb_printf(" PSP: 0x%x\n", psp_pointer);
@@ -757,7 +773,6 @@ uint8_t readPbs()
 
 //-----------------------------------------------------------------------------
 // YOUR UNIQUE CODE
-// REQUIRED: add any custom code in this space
 //-----------------------------------------------------------------------------
 
 // ------------------------------------------------------------------------------
@@ -968,7 +983,8 @@ void shell()
 {
     USER_DATA data;
     bool valid_input = false;
-    uint8_t i;
+    uint8_t i,j;
+    char *taskName, *arg;
     while (true)
     {
         putcUart0('>');
@@ -1004,15 +1020,119 @@ void shell()
         else if( isCommand(&data, "clear", 0) || isCommand(&data, "cls", 0))
         {
             for(i = 0; i < 50; i++)
-            putcUart0('\n');
+                putcUart0('\n');
             valid_input = true;
         }
 
+        // Process Status
+        // show PID, array index in the tcb array
+        //time running would be cool
         else if( isCommand(&data, "ps", 0) )
         {
             for(i = 0; i < MAX_TASKS; i++)
             {
-                emb_printf("Task %u:\tstate:%u\n", i, tcb[i].state);
+                emb_printf("PID\t\tSTATE\t\tADDR");
+                emb_printf("%u\t%u\t%u\n", (uint32_t)tcb[i].pid, tcb[i].state, (uint32_t)tcb[i].spInit);
+            }
+            valid_input = true;
+        }
+
+        // Inter-process Communication
+        // Show semaphores
+        else if( isCommand(&data, "ipcs", 0) )
+        {
+            for(i = 0; i < MAX_SEMAPHORES; i++)
+            {
+                for(j = 0; j < semaphores[j].queueSize; j++)
+                    emb_printf("%u ", semaphores[i].processQueue[j]);
+                putcUart0('\n');
+            }
+            valid_input = true;
+        }
+
+        // Kill Process
+        // compares the passed in name and finds it in the tcb array
+        else if( isCommand(&data, "kill", 1) )
+        {
+            taskName = getFieldString(&data, 1);
+            for(i = 0; i < MAX_TASKS; i++)
+            {
+                if( strcomp(tcb[i].name, taskName) )
+                {
+                    stopThread((_fn)tcb[i].pid);
+                    break;
+                }
+            }
+            valid_input = true;
+        }
+
+        // PID_OF
+        // checks the name passed in and returns the pid (also fn pointer)
+        else if( isCommand(&data, "pidof", 1) )
+        {
+            taskName = getFieldString(&data, 1);
+            for(i = 0; i < MAX_TASKS; i++)
+            {
+                if( strcomp(tcb[i].name, taskName) )
+                {
+                    emb_printf("PID: %u\n", (uint32_t)tcb[i].pid);
+                    break;
+                }
+            }
+            valid_input = true;
+        }
+
+        // RUN
+        // checks the name passed in and returns the pid (also fn pointer)
+        else if( isCommand(&data, "run", 1) )
+        {
+            taskName = getFieldString(&data, 1);
+            for(i = 0; i < MAX_TASKS; i++)
+            {
+                if( strcomp(tcb[i].name, taskName) )
+                {
+                    if(tcb[i].state == STATE_READY)
+                        emb_printf("Task already running.\n");
+                    else
+
+                    break;
+                }
+            }
+            valid_input = true;
+        }
+
+        // PREEMP
+        // toggle it based on input
+        else if( isCommand(&data, "preemp", 1) )
+        {
+            arg = getFieldString(&data, 1);
+            if( strcomp(arg, "on") )
+            {
+                preemptionActive = true;
+                putsUart0("Preemption active.\n");
+            }
+            else if( strcomp(arg, "off") )
+            {
+                preemptionActive = false;
+                putsUart0("Preemption disabled.\n");
+            }
+            valid_input = true;
+        }
+
+        // SCHED
+        // toggle it based on input
+        else if( isCommand(&data, "sched", 1) )
+        {
+            arg = getFieldString(&data, 1);
+            if( strcomp(arg, "prio") )
+            {
+                priorityActive = true;
+                putsUart0("Priority scheduling active.\n");
+            }
+            else if( strcomp(arg, "rr") )
+            {
+                priorityActive = false;
+                putsUart0("Round robin scheduling active.\n");
             }
             valid_input = true;
         }
@@ -1066,8 +1186,8 @@ int main(void)
     ok &= createThread(readKeys, "ReadKeys", 6, 1024);
     ok &= createThread(debounce, "Debounce", 6, 1024);
     ok &= createThread(important, "Important", 0, 1024);
-//    ok &= createThread(uncooperative, "Uncoop", 6, 1024);
-//    ok &= createThread(errant, "Errant", 6, 1024);
+    ok &= createThread(uncooperative, "Uncoop", 6, 1024);
+    ok &= createThread(errant, "Errant", 6, 1024);
 //    ok &= createThread(shell, "Shell", 6, 2048);
 
     // Start up RTOS
