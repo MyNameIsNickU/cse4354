@@ -25,7 +25,7 @@ void initSysTick(void)
     NVIC_ST_RELOAD_R = 39999;
     // reset value is not 1 for clock source, must set the bit
     // TI lied!
-	NVIC_ST_CTRL_R |= (NVIC_ST_CTRL_CLK_SRC | NVIC_ST_CTRL_INTEN | NVIC_ST_CTRL_ENABLE);
+	NVIC_ST_CTRL_R |= (NVIC_ST_CTRL_CLK_SRC | NVIC_ST_CTRL_INTEN);
 }
 
 void reboot(void)

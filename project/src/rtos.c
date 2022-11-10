@@ -75,7 +75,8 @@ typedef enum _svcNum{
     SVC_YIELD = 21,
     SVC_SLEEP = 32,
     SVC_WAIT = 43,
-    SVC_POST = 54
+    SVC_POST = 54,
+    SVC_MALLOC = 13
 } svcNum;
 
 // function pointer
@@ -109,8 +110,8 @@ semaphore semaphores[MAX_SEMAPHORES];
 uint8_t taskCurrent = 0;   // index of last dispatched task
 uint8_t taskCount = 0;     // total number of valid tasks
 
-// REQUIRED: add store and management for the memory used by the thread stacks
-//           thread stacks must start on 1 kiB boundaries so mpu can work correctly
+#define MIN_PRIORITY     7 // the lowest priority a thread can have
+
 uint8_t * heap_bottom = (uint8_t *)0x20001000;
 //uint8_t * psp = (uint8_t*)0x20008000;
 
@@ -171,15 +172,8 @@ void setSRD(uint32_t srd_mask)
     }
 }
 
-
-// TODO: add your malloc code here and update the SRD bits for the current thread
-// NOTE: this will eventually just become a SVC
-void * mallocFromHeap(uint32_t size_in_bytes)
+void * svcMalloc(uint32_t size_in_bytes)
 {
-    // if unprivileged
-    // do a service call
-    // else do what's already here
-
     void * temp = NULL;
 
     // ASSUME: should already be rounded up
@@ -200,6 +194,14 @@ void * mallocFromHeap(uint32_t size_in_bytes)
 #endif
 
     return temp;
+}
+
+// NOTE: this is just a SVC call
+// svcMalloc is what actually runs now
+void * mallocFromHeap(uint32_t size_in_bytes)
+{
+    __asm(" SVC #13");
+    // how do I return something here to satisfy compiler?
 }
 
 #define REGION_SIZE 1024
@@ -286,29 +288,55 @@ void initRtos()
 
 int rtosScheduler()
 {
-    bool ok;
     static uint8_t task = 0xFF;
-    uint8_t i;
-    ok = false;
+    static int8_t lastTaskRan[MIN_PRIORITY + 1] = {0};
+    uint8_t prio_i, task_i, loop_count = 0;
+    bool foundTask = false, ready2run_l = false;
 
     // TODO: check this
+    // we have to keep track of each task run for each priority separately?
+    // N number of circular buffer layers for each priority?
+    // ...seems like a lot, will take more time, but prio 0 will run quickly still
+    // should just loop around once and find lowest prio but keep track of index
+    // this is very complicated apparently
     if(priorityActive)
     {
-        task++; // this should handle switching between same prior tasks
-        for(i = 0; i < MAX_TASKS; i++)
-            if(tcb[i].state == STATE_READY && tcb[i].priority > tcb[task].priority )
-                task = i;
+        // loops for each priority value
+        for(prio_i = 0; prio_i <= MIN_PRIORITY && !foundTask; prio_i++)
+        {
+            // goes through each task and find outer loop prio
+            // start at the last task ran + 1, will either find same prio task or circularly loop around back to last task
+            // has to go through each of the tasks to go to the next lowest priority
+            for(task_i = (lastTaskRan[prio_i] + 1) % (MAX_TASKS); loop_count == MAX_TASKS/*task_i < MAX_TASKS*/; task_i=(task_i+1)%MAX_TASKS, loop_count++)
+            {
+                ready2run_l = tcb[task_i].state == STATE_READY || tcb[task_i].state == STATE_UNRUN;
+                if( tcb[task_i].priority == prio_i && ready2run_l )
+                {
+                    lastTaskRan[prio_i] = task_i;
+                    task = task_i;
+                    foundTask = true;
+                    break;
+                }
+            }
+        }
     }
     else
     {
-        while (!ok)
+        while (!foundTask)
         {
             task++;
             if (task >= MAX_TASKS)
                 task = 0;
-            ok = (tcb[task].state == STATE_READY || tcb[task].state == STATE_UNRUN);
+            foundTask = (tcb[task].state == STATE_READY || tcb[task].state == STATE_UNRUN);
         }
     }
+
+    if(task == 2)
+        __asm(" NOP");
+    if(task == 3)
+        __asm(" NOP");
+
+    putcUart0(task + 48);
     return task;
 }
 
@@ -343,6 +371,7 @@ bool createThread(_fn fn, const char name[], uint8_t priority, uint32_t stackByt
             // pid is the function address
             tcb[i].pid = fn;
             // allocate stack space and store top of stack in sp and spInit
+            // -1 as our allocated space is (base -> top - 1) e.g. 0x2000 + 0x27FF, we don't get access to 0x2800
             tcb[i].sp = ((uint8_t*)mallocFromHeap(stackBytes) + stackBytes - 1);
             tcb[i].spInit = tcb[i].sp;
             tcb[i].priority = priority;
@@ -354,17 +383,15 @@ bool createThread(_fn fn, const char name[], uint8_t priority, uint32_t stackByt
         }
     }
     // REQUIRED: allow tasks switches again
+    // ????
     return ok;
 }
 
-// REQUIRED: modify this function to restart a thread
 void restartThread(_fn fn)
 {
     __asm(" SVC #66");
 }
 
-// REQUIRED: modify this function to stop a thread
-// REQUIRED: remove any pending semaphore waiting
 // NOTE: see notes in class for strategies on whether stack is freed or not
 void stopThread(_fn fn)
 {
@@ -404,7 +431,11 @@ void startRtos()
     _fn task = (_fn)tcb[taskCurrent].pid;
     tcb[taskCurrent].state = STATE_READY;
 
+    // update MPU based on the Subregion Disabled bits
     setSRD(tcb[taskCurrent].srd);
+
+    // turn on systick timer
+    NVIC_ST_CTRL_R |= NVIC_ST_CTRL_ENABLE;
 
     // must access the tcb struct before getting set to unpriv
     setUnprivileged();
@@ -536,8 +567,6 @@ void pendSvIsr()
     //while(1) { }
 }
 
-// REQUIRED: modify this function to add support for the service call
-// REQUIRED: in preemptive code, add code to handle synchronization primitives
 void svCallIsr()
 {
     // get the PSP in order to get pushed value of PC
@@ -561,6 +590,7 @@ void svCallIsr()
     semaphore *sem;
 
     uint8_t i,j;
+    uint32_t allocated_memory;
 
     switch(sv_num)
     {
@@ -627,6 +657,9 @@ void svCallIsr()
                 semaphores[r0_value].processQueue[i] = semaphores[r0_value].processQueue[i+1];
             }
             semaphores[r0_value].queueSize--;
+
+
+            // TODO: task switch to the task that is now able to run
         }
         break;
     case SVC_RESTART:
@@ -674,6 +707,15 @@ void svCallIsr()
                 tcb[i].priority = r1_value;
             }
         }
+        break;
+    case SVC_MALLOC:
+        // allocate function, basically what malloc from heap does now
+        allocated_memory = (uint32_t)svcMalloc(r0_value);
+        // *psp = void * from malloc
+        // this will store the void * at R0
+        *psp = allocated_memory;
+        // update SRD mask with the newly allocated memory
+        tcb[taskCurrent].srd |= getSRD(allocated_memory, r0_value);
         break;
     }
 
@@ -866,8 +908,8 @@ void lengthyFn()
     // Example of allocating memory from stack
     // This will show up in the pmap command for this thread
 
-//    p = mallocFromHeap(1024);
-//    *p = 0;
+    p = mallocFromHeap(1024);
+    *p = 0;
 
     while(true)
     {
