@@ -166,6 +166,25 @@ void emb_strcpy(const char * source, char * dest)
     dest[index] = '\0';
 }
 
+void emb_memcpy(void *dest, const void *src, uint16_t bytes_to_copy)
+{
+    uint8_t *dest_B = (uint8_t*)dest, *src_B = (uint8_t*)src;
+    while(bytes_to_copy != 0)
+    {
+        *dest_B = *(src_B++);
+        dest_B++;
+        bytes_to_copy--;
+    }
+}
+
+uint32_t emb_strlen(const char * s)
+{
+    uint32_t count = 0;
+    while(s[count] != '\0')
+        count++;
+    return count;
+}
+
 uint8_t emb_log2(uint64_t value)
 {
     uint8_t count = 0;

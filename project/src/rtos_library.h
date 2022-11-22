@@ -26,14 +26,13 @@ extern void setupUnrun(uint32_t function_pointer);
 extern uint32_t extractR0(void);
 
 
-void reboot(void);
-void ps(void);
+/*void ps(void);
 void ipcs(void);
 void kill(uint32_t pid);
 void pmap(uint32_t pid);
 void preempt(bool on);
 void sched(bool prio_on);
 void pidof(const char name[]);
-void runProcess(const char name[]);
+void runProcess(const char name[]);*/
 
 #endif /* _RTOS_H_ */

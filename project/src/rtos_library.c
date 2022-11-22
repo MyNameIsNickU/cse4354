@@ -28,16 +28,7 @@ void initSysTick(void)
 	NVIC_ST_CTRL_R |= (NVIC_ST_CTRL_CLK_SRC | NVIC_ST_CTRL_INTEN);
 }
 
-void reboot(void)
-{
-    // resets core and microcontroller
-    NVIC_APINT_R = NVIC_APINT_VECTKEY | NVIC_APINT_SYSRESETREQ; // resets perphs and regs
-
-    // just a core reset, does not reset perphs and regs
-    //NVIC_APINT_R = NVIC_APINT_VECTKEY | NVIC_APINT_VECT_RESET;
-}
-
-void ps(void)
+/*void ps(void)
 {
     putsUart0("PS Called\n");
 }
@@ -95,4 +86,4 @@ void pidof(const char name[])
 void runProcess(const char name[])
 {
     emb_printf("Running: %s\n", name);
-}
+}*/
