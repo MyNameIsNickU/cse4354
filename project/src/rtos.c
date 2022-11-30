@@ -65,7 +65,7 @@
 // RTOS Defines and Kernel Variables
 //-----------------------------------------------------------------------------
 
-bool preemptionActive = false;
+bool preemptionActive = true;
 bool priorityActive = true;
 
 enum _svcNum{
@@ -131,13 +131,15 @@ struct _tcb
     int8_t priority;               // 0=highest to 7=lowest
     int8_t priorityInit;           // Store the original priority here
     uint32_t ticks;                // ticks until sleep complete
-    uint32_t time;                 // for CPU time for 'ps' command
+    uint32_t time_ping;            // for CPU time for 'ps' command
+    uint32_t time_pong;            // for CPU time for 'ps' command
     uint32_t srd;                  // MPU subregion disable bits (one per 1 KiB)
     char name[16];                 // name of task used in ps command
     void *semaphore;               // pointer to the semaphore that is blocking the thread
-} tcb[MAX_TASKS];
+} tcb[MAX_TASKS] = {0};
 
-
+bool wrPing_rdPong = true;
+uint32_t time_running_sum = 0;
 //-----------------------------------------------------------------------------
 // Memory Manager and MPU Funcitons
 //-----------------------------------------------------------------------------
@@ -306,6 +308,8 @@ void initRtos()
 {
     // SysTick set to 1 kHz or 1ms
     initSysTick();
+    initWTimer1();
+    initWTimer2();
 
     uint8_t i;
     // no tasks running
@@ -428,7 +432,6 @@ void stopThread(_fn fn)
     __asm(" SVC #86");
 }
 
-// REQUIRED: modify this function to set a thread priority
 void setThreadPriority(_fn fn, uint8_t priority)
 {
     __asm(" SVC #33");
@@ -451,6 +454,7 @@ void startRtos()
     // get index of task to run from tcb
     taskCurrent = rtosScheduler();
 
+    // update MPU based on the Subregion Disabled bits
     setSRD(tcb[taskCurrent].srd);
     // set SP of task to malloc'd memory
     setPSP(tcb[taskCurrent].spInit);
@@ -463,8 +467,6 @@ void startRtos()
     // load the function call into variable
     _fn task = (_fn)tcb[taskCurrent].pid;
     tcb[taskCurrent].state = STATE_READY;
-
-    // update MPU based on the Subregion Disabled bits
 
 
     // turn on systick timer
@@ -526,7 +528,8 @@ enum _shell_cmd
 {
     SHELL_PMAP = 2,
     SHELL_PIDOF = 3,
-    SHELL_IPCS = 4
+    SHELL_IPCS = 4,
+    SHELL_PS = 5
 };
 
 typedef struct _SHELL_PMAP_S
@@ -539,6 +542,16 @@ typedef struct _SHELL_PMAP_S
     bool usedMalloc;
 } SHELL_PMAP_S;
 
+typedef struct _SHELL_PS_S
+{
+    bool valid;
+    uint32_t time;
+    char name[16];
+    uint8_t state;
+    uint16_t k_time;
+    uint32_t pid;
+} SHELL_PS_S;
+
 // type will be the type of data requested
 // data_space will be a pointer to the space that data will be returned
 void getKernelData(uint8_t type, void * data_space)
@@ -546,9 +559,14 @@ void getKernelData(uint8_t type, void * data_space)
     __asm(" SVC #97");
 }
 
+
+#define INTEGRATION_T_MS 5000
+
 void systickIsr()
 {
     uint8_t i;
+    static uint16_t ms_passed = 0;
+    ms_passed++;
 
 	// clear pending systick
 	NVIC_INT_CTRL_R |= NVIC_INT_CTRL_PENDSTCLR;
@@ -557,6 +575,14 @@ void systickIsr()
 	// yes, i do
 	for(i = 0; i < MAX_TASKS; i++)
 	{
+	    if(ms_passed == INTEGRATION_T_MS)
+	    {
+	        if(!wrPing_rdPong)
+	            tcb[i].time_ping = 0;
+	        else
+	            tcb[i].time_pong = 0;
+	    }
+
 	    if(tcb[i].state == STATE_DELAYED)
 	    {
 	        if(tcb[i].ticks == 0)
@@ -566,7 +592,21 @@ void systickIsr()
 	    }
 	}
 
-	// TODO: clear out timers for CPU time in tcb
+	if(ms_passed == INTEGRATION_T_MS)
+	{
+	    time_running_sum = WTIMER2_TAV_R;
+        // clear out timers for CPU time in tcb
+        WTIMER1_TAV_R = 0;
+        //WTIMER1_CTL_R |= TIMER_CTL_TAEN;
+        WTIMER2_TAV_R = 0;
+        //WTIMER2_CTL_R |= TIMER_CTL_TAEN;
+        if(wrPing_rdPong)
+            wrPing_rdPong = false;
+        else
+            wrPing_rdPong = true;
+        ms_passed = 0;
+        //putcUart0('p');
+	}
 
 	// if preemption is active, trigger a task switch
 	if(preemptionActive)
@@ -580,6 +620,8 @@ void systickIsr()
 // TODO: add timers to count the amount of time spent running threads and/or task switching
 void pendSvIsr()
 {
+    // stop CPU Timers
+    WTIMER1_CTL_R &= ~TIMER_CTL_TAEN;
     // aren't the core resgisters already on the PSP at this point by h/w?
     // yes, but R4-R11 aren't
     pushCore();
@@ -587,6 +629,21 @@ void pendSvIsr()
 
     // save the PSP
     tcb[taskCurrent].sp = psp;
+
+    if(wrPing_rdPong)
+    {
+        /*putcUart0('w');
+        putcUart0('p');
+        putcUart0('i');*/
+        tcb[taskCurrent].time_ping += WTIMER1_TAV_R;
+    }
+    else
+    {
+        /*putcUart0('w');
+        putcUart0('p');
+        putcUart0('o');*/
+        tcb[taskCurrent].time_pong += WTIMER1_TAV_R;
+    }
 
     // get a new task
     taskCurrent = rtosScheduler();
@@ -618,10 +675,13 @@ void pendSvIsr()
 	// clear pending sv flag
 	NVIC_INT_CTRL_R |= NVIC_INT_CTRL_UNPEND_SV;
     //while(1) { }
+	WTIMER1_TAV_R = 0;
+	WTIMER1_CTL_R |= TIMER_CTL_TAEN;
 }
 
 void svCallIsr()
 {
+    WTIMER1_CTL_R &= ~TIMER_CTL_TAEN;
     // get the PSP in order to get pushed value of PC
     uint32_t *psp = getPSP();
 
@@ -649,6 +709,9 @@ void svCallIsr()
     uint32_t arg_int;
 
     SHELL_PMAP_S *pmap_data;
+    SHELL_PS_S *ps_data;
+
+    static uint32_t sum_task_time = 0;
 
     switch(sv_num)
     {
@@ -726,7 +789,6 @@ void svCallIsr()
             // found the requested thread
             if((uint32_t)tcb[i].pid == r0_value && (tcb[i].state == STATE_KILLED) )
             {
-                // TODO: store the original priority
                 tcb[i].priority = tcb[i].priorityInit;
                 tcb[i].sp = tcb[i].spInit;
                 tcb[i].state = STATE_UNRUN;
@@ -846,8 +908,44 @@ void svCallIsr()
                 pmap_data->usedMalloc = false;
             break;
         }
+        case SHELL_PS:
+            i = *(uint8_t*)(r1_value); // what index
+            ps_data = (SHELL_PS_S*)(r1_value);
+
+            // requested kernel time
+            if(i == MAX_TASKS)
+            {
+                ps_data->k_time = (time_running_sum-sum_task_time) / (time_running_sum / 10000);
+                ps_data->valid = true;
+                sum_task_time = 0;
+                break;
+            }
+
+            ps_data->valid = tcb[i].state != 0;
+            if(!ps_data->valid)
+                break;
+
+            emb_strcpy(tcb[i].name, ps_data->name);
+            ps_data->state = tcb[i].state;
+            ps_data->pid = (uint32_t)tcb[i].pid;
+            if(wrPing_rdPong)
+            {
+                //emb_printf("Pong[%u]: %u\n", i, tcb[i].time_pong);
+                ps_data->time = tcb[i].time_pong / (time_running_sum / 10000);
+                sum_task_time += tcb[i].time_pong;
+            }
+            else
+            {
+                //emb_printf("Ping[%u]: %u\n", i, tcb[i].time_ping);
+                ps_data->time = tcb[i].time_ping / (time_running_sum / 10000);
+                sum_task_time += tcb[i].time_ping;
+            }
+
+            break;
     }
 
+    // Restart task timers
+    WTIMER1_CTL_R |= TIMER_CTL_TAEN;
 }
 
 void mpuFaultIsr()
@@ -856,7 +954,7 @@ void mpuFaultIsr()
     uint32_t * psp_pointer = getPSP();
     uint8_t mem_fault_bool = NVIC_FAULT_STAT_R && NVIC_FAULT_STAT_MMARV;
 
-    emb_printf("MPU fault in process %u\n", taskCurrent);
+    emb_printf("MPU fault in process %u\n", tcb[taskCurrent].pid);
 
     emb_printf(" MSP: 0x%x\n", msp_pointer);
     emb_printf(" PSP: 0x%x\n", psp_pointer);
@@ -887,26 +985,26 @@ void mpuFaultIsr()
     if(NVIC_FAULT_STAT_R & NVIC_FAULT_STAT_DERR || NVIC_FAULT_STAT_R & NVIC_FAULT_STAT_IERR)
     {
 
-        stopThread((_fn)tcb[taskCurrent].pid);
-//        semaphore *sem;
-//        uint8_t j;
+        //stopThread((_fn)tcb[taskCurrent].pid);
+        semaphore *sem;
+        uint8_t j;
 
         NVIC_FAULT_STAT_R |= NVIC_FAULT_STAT_DERR | NVIC_FAULT_STAT_IERR;
         //emb_printf("...called from MPU\n");
-//        tcb[taskCurrent].state = STATE_KILLED;
+        tcb[taskCurrent].state = STATE_KILLED;
 //
 //        //TODO: clear out SRD bits
 //
-//        // remove task from process queue
-//        sem = (semaphore*)tcb[taskCurrent].semaphore;
-//        // if the process is waiting on a semaphore
-//        // ...then remove that task from the process queue
-//        if( sem != NULL && sem->queueSize != 0 )
-//        {
-//            for(j = 0; j < sem->queueSize - 1; j++)
-//                sem->processQueue[j] = sem->processQueue[j+1];
-//            sem->queueSize--;
-//        }
+        // remove task from process queue
+        sem = (semaphore*)tcb[taskCurrent].semaphore;
+        // if the process is waiting on a semaphore
+        // ...then remove that task from the process queue
+        if( sem != NULL && sem->queueSize != 0 )
+        {
+            for(j = 0; j < sem->queueSize - 1; j++)
+                sem->processQueue[j] = sem->processQueue[j+1];
+            sem->queueSize--;
+        }
 
     }
 
@@ -961,7 +1059,7 @@ void initHw()
     // initialize the faults
     NVIC_SYS_HND_CTRL_R |= NVIC_SYS_HND_CTRL_USAGE | NVIC_SYS_HND_CTRL_BUS | NVIC_SYS_HND_CTRL_MEM;
     // trap on divide by 0
-    NVIC_CFG_CTRL_R |= NVIC_CFG_CTRL_DIV0;
+    //NVIC_CFG_CTRL_R |= NVIC_CFG_CTRL_DIV0;
 }
 
 uint8_t readPbs()
@@ -1202,6 +1300,7 @@ void shell()
 {
     USER_DATA data;
     SHELL_PMAP_S *pmap_data;
+    SHELL_PS_S *ps_data;
     void * kernel_data_ptr = mallocFromHeap(1024);
     bool valid_input = false;
     int8_t valid_integer = -1;
@@ -1252,7 +1351,29 @@ void shell()
         //time running would be cool
         else if( isCommand(&data, "ps", 0) )
         {
-            putsUart0("NOT IMPLEMENTED.\n");
+            putsUart0("\nNAME\t\t\tPID\t\tTIME\n");
+
+            for(i = 0; i < MAX_TASKS; i++)
+            {
+                emb_memcpy(kernel_data_ptr, &i, 1); // give svc the index
+                getKernelData(SHELL_PS, kernel_data_ptr);
+                ps_data = (SHELL_PS_S*)kernel_data_ptr;
+                if(ps_data->valid)
+                {
+                    if(emb_strlen(ps_data->name) <= 7)
+                        emb_printf("%s\t\t\t%u\t\t%u.%u %%\n", ps_data->name, ps_data->pid, ps_data->time/100, ps_data->time%100);
+                    else
+                        emb_printf("%s\t\t%u\t\t%u.%u %%\n", ps_data->name, ps_data->pid, ps_data->time/100, ps_data->time%100);
+                }
+            }
+            // i is now = to MAX_TASKS
+            emb_memcpy(kernel_data_ptr, &i, 1); // give svc the index
+            getKernelData(SHELL_PS, kernel_data_ptr);
+            if(ps_data->valid)
+            {
+                emb_printf("*Kernel Time\t\t%u.%u %%\n", ps_data->k_time/100, ps_data->k_time%100);
+            }
+
             valid_input = true;
         }
 

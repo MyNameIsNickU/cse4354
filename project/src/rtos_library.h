@@ -12,6 +12,8 @@
 #include <stdbool.h>
 
 void initSysTick(void);
+void initWTimer1(void);
+void initWTimer2(void);
 
 // assembly function defines
 extern void setPSP(uint32_t * address);

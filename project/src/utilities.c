@@ -112,6 +112,13 @@ void emb_vprintf(const char * str, va_list vaArgP)
                     convertNeeded = 1;
                     break;
                 }
+                // trying to escape and print out '%'
+                case '%':
+                {
+                    putcUart0('%');
+                    convertNeeded = 0;
+                    break;
+                }
             }
 
             // handles flag for a conversion from an integer value to a string

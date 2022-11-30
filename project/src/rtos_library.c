@@ -5,7 +5,7 @@
  *      Author: Nicholas Untrecht
  */
 
-#include <rtos_library.h>
+#include "rtos_library.h"
 #include "tm4c123gh6pm.h"
 #include "uart0.h"
 #include "cmd.h"
@@ -28,6 +28,32 @@ void initSysTick(void)
 	NVIC_ST_CTRL_R |= (NVIC_ST_CTRL_CLK_SRC | NVIC_ST_CTRL_INTEN);
 }
 
+#define WTIMER_CFG_32_BIT TIMER_CFG_16_BIT
+void initWTimer1(void)
+{
+    SYSCTL_RCGCWTIMER_R |= SYSCTL_RCGCWTIMER_R1; // Wide Timer 1
+    _delay_cycles(3);
+
+    WTIMER1_CTL_R &= ~TIMER_CTL_TAEN; // turn off timer
+    WTIMER1_CFG_R = WTIMER_CFG_32_BIT; // sets WTimer to 32b mode
+    WTIMER1_TAMR_R = TIMER_TAMR_TACMR | TIMER_TAMR_TACDIR; // count time and count up from 0
+    WTIMER1_CTL_R = TIMER_CTL_TAEVENT_NEG; // count time between negative edges
+    WTIMER1_TAV_R = 0;
+    WTIMER1_CTL_R |= TIMER_CTL_TAEN;
+}
+
+void initWTimer2(void)
+{
+    SYSCTL_RCGCWTIMER_R |= SYSCTL_RCGCWTIMER_R2; // Wide Timer 1
+    _delay_cycles(3);
+
+    WTIMER2_CTL_R &= ~TIMER_CTL_TAEN; // turn off timer
+    WTIMER2_CFG_R = WTIMER_CFG_32_BIT; // sets WTimer to 32b mode
+    WTIMER2_TAMR_R = TIMER_TAMR_TACMR | TIMER_TAMR_TACDIR; // count time and count up from 0
+    WTIMER2_CTL_R = TIMER_CTL_TAEVENT_NEG; // count time between negative edges
+    WTIMER2_TAV_R = 0;
+    WTIMER2_CTL_R |= TIMER_CTL_TAEN;
+}
 /*void ps(void)
 {
     putsUart0("PS Called\n");
