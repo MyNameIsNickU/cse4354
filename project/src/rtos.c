@@ -538,7 +538,11 @@ typedef struct _SHELL_PMAP_S
     uint32_t stackTop;
     uint32_t stackBottom;
     uint32_t stackSize;
+    uint32_t heapBottom;
+    uint32_t heapTop;
+    uint32_t heapSize;
     uint32_t srd;
+    uint32_t heap_srd;
     bool usedMalloc;
 } SHELL_PMAP_S;
 
@@ -560,7 +564,7 @@ void getKernelData(uint8_t type, void * data_space)
 }
 
 
-#define INTEGRATION_T_MS 5000
+#define INTEGRATION_T_MS 2000
 
 void systickIsr()
 {
@@ -710,6 +714,8 @@ void svCallIsr()
 
     SHELL_PMAP_S *pmap_data;
     SHELL_PS_S *ps_data;
+
+    bool found = false;
 
     static uint32_t sum_task_time = 0;
 
@@ -865,16 +871,17 @@ void svCallIsr()
         // output: PID
         case SHELL_PIDOF:
             arg = (char*)(r1_value); // arg should have string name
-            for(i = 0; i < MAX_TASKS; i++)
+            for(i = 0; i < MAX_TASKS && !found; i++)
             {
                 if(strcomp(arg, tcb[i].name))
                 {
                     emb_memcpy((void*)r1_value, &tcb[i].pid, sizeof(uint32_t));
-                    break;
+//                    break;
+                    found = true;
                 }
             }
 
-            if(i == MAX_TASKS)
+            if(!found)
                 emb_memcpy((void*)r1_value, "NOTFOUND", 9);
             // now arg should have the
             break;
@@ -901,13 +908,34 @@ void svCallIsr()
             pmap_data->stackTop = (uint32_t)tcb[i].spInit;
             pmap_data->stackSize = tcb[i].stackSize;
             pmap_data->stackBottom = pmap_data->stackTop + 1 - tcb[i].stackSize;
+            pmap_data->heapBottom = 0;
+            pmap_data->heapTop = 0;
+            pmap_data->heapSize = 0;
+            arg_int = tcb[i].srd - getSRD(pmap_data->stackBottom, pmap_data->stackSize);
 
-            if(tcb[i].srd != getSRD(pmap_data->stackBottom, pmap_data->stackSize))
+            if(arg_int > 0)
+            {
                 pmap_data->usedMalloc = true;
+                pmap_data->heapBottom = 0x20000000;
+                while((arg_int & 1) == 0)
+                {
+                    pmap_data->heapBottom += 1024;
+                    arg_int >>= 1;
+                }
+                pmap_data->heapTop = pmap_data->heapBottom + 1024 - 1;
+                pmap_data->heapSize = 1024;
+
+                arg_int >>= 1;
+                while((arg_int & 1) == 1)
+                {
+                    pmap_data->heapTop += 1024;
+                    pmap_data->heapSize += 1024;
+                    arg_int >>= 1;
+                }
+            }
             else
                 pmap_data->usedMalloc = false;
             break;
-        }
         case SHELL_PS:
             i = *(uint8_t*)(r1_value); // what index
             ps_data = (SHELL_PS_S*)(r1_value);
@@ -915,7 +943,7 @@ void svCallIsr()
             // requested kernel time
             if(i == MAX_TASKS)
             {
-                ps_data->k_time = (time_running_sum-sum_task_time) / (time_running_sum / 10000);
+                ps_data->k_time = (INTEGRATION_T_MS * 40000-sum_task_time) / (INTEGRATION_T_MS * 40000 / 10000);
                 ps_data->valid = true;
                 sum_task_time = 0;
                 break;
@@ -931,17 +959,19 @@ void svCallIsr()
             if(wrPing_rdPong)
             {
                 //emb_printf("Pong[%u]: %u\n", i, tcb[i].time_pong);
-                ps_data->time = tcb[i].time_pong / (time_running_sum / 10000);
+                ps_data->time = tcb[i].time_pong / (INTEGRATION_T_MS * 40000 / 10000);
                 sum_task_time += tcb[i].time_pong;
             }
             else
             {
                 //emb_printf("Ping[%u]: %u\n", i, tcb[i].time_ping);
-                ps_data->time = tcb[i].time_ping / (time_running_sum / 10000);
+                //ps_data->time = tcb[i].time_ping / (time_running_sum / 10000);
+                ps_data->time = tcb[i].time_ping / (INTEGRATION_T_MS * 40000 / 10000);
                 sum_task_time += tcb[i].time_ping;
             }
 
             break;
+        }
     }
 
     // Restart task timers
@@ -1301,7 +1331,7 @@ void shell()
     USER_DATA data;
     SHELL_PMAP_S *pmap_data;
     SHELL_PS_S *ps_data;
-    void * kernel_data_ptr = mallocFromHeap(1024);
+    void * kernel_data_ptr = mallocFromHeap(2048);
     bool valid_input = false;
     int8_t valid_integer = -1;
     uint8_t i, j;
@@ -1325,6 +1355,7 @@ void shell()
             putsUart0("'pidof [NAME]'\n");
             putsUart0("'pmap [PID#]'\n");
             putsUart0("'ipcs'\n");
+            putsUart0("'ps'\n");
             putsUart0("'run [NAME]'\n");
             putsUart0("'kill [PID#]'\n");
             putsUart0("'reboot'\n");
@@ -1371,7 +1402,7 @@ void shell()
             getKernelData(SHELL_PS, kernel_data_ptr);
             if(ps_data->valid)
             {
-                emb_printf("*Kernel Time\t\t%u.%u %%\n", ps_data->k_time/100, ps_data->k_time%100);
+                emb_printf("*Kernel Time\t\txxxx\t\t%u.%u %%\n", ps_data->k_time/100, ps_data->k_time%100);
             }
 
             valid_input = true;
@@ -1392,17 +1423,14 @@ void shell()
 
                 if(pmap_data->found)
                 {
-                    putsUart0("\nADDR\t\t\t\tSIZE\tMALLOC\n");
-                    emb_printf("0x%X - 0x%X\t\t%u", pmap_data->stackTop, pmap_data->stackBottom, pmap_data->stackSize);
+                    putsUart0("\nADDR\t\t\t\tSIZE\tTYPE\n");
+                    emb_printf("0x%X - 0x%X\t\t%u\tSTACK\n", pmap_data->stackTop, pmap_data->stackBottom, pmap_data->stackSize);
 
                     if(pmap_data->usedMalloc)
                     {
-                        emb_printf("\t*M");
+                        emb_printf("0x%X - 0x%X\t\t%u\tMALLOC\n", pmap_data->heapTop, pmap_data->heapBottom, pmap_data->heapSize);
                     }
-                    else
-                        emb_printf("\t*X");
 
-                    putcUart0('\n');
                     putcUart0('\n');
                 }
                 else
@@ -1591,7 +1619,7 @@ int main(void)
     // Add other processes
     ok &= createThread(lengthyFn, "LengthyFn", 6, 1024);
     ok &= createThread(flash4Hz, "Flash4Hz", 4, 1024);
-//    ok &= createThread(flash2Hz, "Flash2Hz", 4, 1024);
+    //ok &= createThread(flash2Hz, "Flash2Hz", 4, 1024);
     ok &= createThread(oneshot, "OneShot", 2, 1024);
     ok &= createThread(readKeys, "ReadKeys", 6, 1024);
     ok &= createThread(debounce, "Debounce", 6, 1024);
